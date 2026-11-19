@@ -39,7 +39,7 @@ if (!url) {
 
 const out = resolve(ROOT, a.out || 'shots');
 await mkdir(out, { recursive: true });
-const b = await chromium.launch({ args: ['--no-sandbox'] });
+const b = await chromium.launch({ args: ['--no-sandbox', '--use-angle=swiftshader', '--enable-unsafe-swiftshader'] });
 const pg = await b.newPage(a.mobile
   ? { viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true }
   : { viewport: { width: 1440, height: 900 }, deviceScaleFactor: a.zoom ? 2 : 1 });
@@ -60,16 +60,15 @@ const go = async (h, name) => {
 };
 
 await pg.goto(url);
-await pg.waitForTimeout(2800); // intro drop-in animation
+await pg.waitForTimeout(2800);
 await pg.screenshot({ path: join(out, `${tag}overview.png`) });
 for (const h of a.hood ? [a.hood] : HOODS) await go(h, h);
 if (a.place) await go(a.place, `card_${a.place}`);
 
 const fps = await pg.evaluate(() => new Promise(r => { let n = 0; const t0 = performance.now();
   (function f() { n++; if (performance.now() - t0 < 2000) requestAnimationFrame(f); else r(n / 2); })(); }));
-const count = await pg.evaluate(() => document.querySelectorAll('#map *').length);
 console.log(`screenshots -> ${out}`);
-console.log(`~${fps.toFixed(0)} fps, ${count} SVG elements`);
+console.log(`~${fps.toFixed(0)} fps (software WebGL in headless Chrome; a real GPU is much faster)`);
 console.log(errs.length ? 'errors:' : 'no console errors');
 for (const e of errs) console.log('  ' + e);
 await b.close();
