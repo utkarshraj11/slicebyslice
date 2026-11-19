@@ -1,9 +1,9 @@
-import { PLACES, HOODS, TOUR, RATING_MAX, type Place } from '../data/places';
-import { closeList, openPlace, setListBy, stopTour, type State } from '../store';
+import { PLACES, HOODS, HOOD_ORDER, RATING_MAX, type Place } from '../data/places';
+import { closeList, openPlace, setListBy, type State } from '../store';
 
 function Item({ p, rank }: { p: Place; rank?: number }) {
   return (
-    <button className="item" onClick={() => { stopTour(); openPlace(p.id); }}>
+    <button className="item" onClick={() => openPlace(p.id)}>
       {rank != null && <span className="rk">{rank}</span>}
       <div><div className="nm">{p.name}</div><div className="ad">{p.address}</div></div>
       {p.rating != null ? <span className="bd">{p.rating}</span> : <span className="bd empty">–/{RATING_MAX}</span>}
@@ -24,7 +24,7 @@ export function ListPanel({ open, by }: { open: boolean; by: State['listBy'] }) 
           <button className={by === 'rank' ? 'on' : ''} onClick={() => setListBy('rank')}>By rating</button>
         </div>
         {by === 'hood'
-          ? TOUR.map(id => (
+          ? HOOD_ORDER.map(id => (
             <div className="grp" key={id}>
               <h4><i style={{ background: HOODS[id].color }} />{HOODS[id].name} · {HOODS[id].sub}</h4>
               {PLACES.filter(p => p.hood === id).map(p => <Item key={p.id} p={p} />)}

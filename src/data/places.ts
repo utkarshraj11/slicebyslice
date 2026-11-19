@@ -48,8 +48,8 @@ export const HOODS: Record<HoodId, Hood> = {
 export const HOOD_IDS = Object.keys(HOODS) as HoodId[];
 export const isHood = (s: string): s is HoodId => s in HOODS;
 
-/** Order of the guided tour (and of the list's neighborhood groups). */
-export const TOUR: HoodId[] = ['hoboken', 'midtown', 'village', 'fidi', 'dumbo', 'midwood'];
+/** Order of the list's neighborhood groups (west to east, north to south). */
+export const HOOD_ORDER: HoodId[] = ['hoboken', 'midtown', 'village', 'fidi', 'dumbo', 'midwood'];
 
 /** Image src for a photo path; resolves relative paths against the app's base URL. */
 export const photoSrc = (p: string) => (/^(data:|https?:|\/)/.test(p) ? p : import.meta.env.BASE_URL + p);

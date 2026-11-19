@@ -1,9 +1,9 @@
 /* App state + actions. A tiny external store so the imperative map and React both read the same state
    synchronously (the camera's framing depends on which panels are open at the moment it refits). */
 import { useSyncExternalStore } from 'react';
-import { PLACES, HOODS, TOUR, isHood, type HoodId } from './data/places';
+import { PLACES, HOODS, isHood, type HoodId } from './data/places';
 import type { MapHandle, MapView } from './world/map';
-import { rotShowing, visibleAt } from './world/compass';
+import { rotShowing } from './world/compass';
 
 export interface State {
   mode: 'overview' | 'hood';
@@ -11,11 +11,10 @@ export interface State {
   curPlace: string | null;
   listOpen: boolean;
   listBy: 'hood' | 'rank';
-  touring: boolean;
   /** view rotation, quarter turns (0 = from the south-west) */
   rot: number;
 }
-let state: State = { mode: 'overview', curHood: null, curPlace: null, listOpen: false, listBy: 'hood', touring: false, rot: 0 };
+let state: State = { mode: 'overview', curHood: null, curPlace: null, listOpen: false, listBy: 'hood', rot: 0 };
 const subs = new Set<() => void>();
 const set = (patch: Partial<State>) => { state = { ...state, ...patch }; subs.forEach(f => f()); };
 const subscribe = (f: () => void) => { subs.add(f); return () => subs.delete(f); };
@@ -79,14 +78,6 @@ export function setRotation(k: number) {
 }
 /** +1 turns the map a quarter turn counter-clockwise (the camera orbits clockwise). */
 export const rotate = (delta: number) => setRotation(state.rot + delta);
-/** The rotation (closest to the current one) that shows the most storefronts in a neighborhood. */
-function bestRot(hood: HoodId) {
-  if (!map) return state.rot;
-  const sides = PLACES.filter(p => p.hood === hood).map(p => map!.facing(p.id));
-  let best = state.rot, bestN = -1;
-  for (const d of [0, 1, 3, 2]) { const k = (state.rot + d) % 4, n = sides.filter(s => visibleAt(s, k)).length; if (n > bestN) { bestN = n; best = k; } }
-  return best;
-}
 export function closeCard(silent?: boolean) {
   if (!state.curPlace) return;
   set({ curPlace: null });
@@ -99,7 +90,7 @@ export function stepPlace(delta: number) {
   const i = PLACES.findIndex(p => p.id === state.curPlace);
   openPlace(PLACES[(i + delta + PLACES.length) % PLACES.length].id);
 }
-export function openList() { closeCard(true); stopTour(); set({ listOpen: true }); refit(800); }
+export function openList() { closeCard(true); set({ listOpen: true }); refit(800); }
 export function closeList(silent?: boolean) {
   if (!state.listOpen) return;
   set({ listOpen: false });
@@ -107,28 +98,6 @@ export function closeList(silent?: boolean) {
 }
 export const toggleList = () => (state.listOpen ? closeList() : openList());
 export const setListBy = (listBy: State['listBy']) => set({ listBy });
-
-let tourT: ReturnType<typeof setTimeout> | null = null;
-export function startTour() {
-  closeCard(true); closeList(true);
-  let i = 0;
-  set({ touring: true });
-  const step = () => {
-    if (i < TOUR.length) {
-      const h = TOUR[i++], k = bestRot(h);
-      if (k !== state.rot) { set({ rot: k }); void map?.setRotation(k); }
-      focusHood(h, { dur: 1600 }); tourT = setTimeout(step, 4300);
-    }
-    else { stopTour(); showOverview(); }
-  };
-  step();
-}
-export function stopTour() {
-  if (tourT != null) clearTimeout(tourT);
-  tourT = null;
-  if (state.touring) set({ touring: false });
-}
-export const toggleTour = () => (state.touring ? stopTour() : startTour());
 
 /** Map tapped on empty space: close whatever panel is open. */
 export function tapBackground() { if (state.curPlace) closeCard(); else if (state.listOpen) closeList(); }

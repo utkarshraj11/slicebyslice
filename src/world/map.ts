@@ -17,8 +17,6 @@ export interface MapCallbacks {
   onPin(id: string): void;
   onHood(id: HoodId): void;
   onBackground(): void;
-  /** user dragged / zoomed / tapped: stop the tour */
-  onUserMove(): void;
   /** right- or shift-drag turned the view a quarter turn (+1 / -1) */
   onTurn(dir: number): void;
   /** camera changed: a round scale-bar length, its width on screen, and zoom % */
@@ -158,9 +156,8 @@ export function createMap(host: HTMLDivElement, overlay: HTMLDivElement, cb: Map
   function placeOverlay() {
     for (const id in pinEls) { const p = W.pins[id].pos, [x, y] = toScreen(p.x, p.y, p.z); pinEls[id].style.transform = `translate(${x.toFixed(1)}px,${y.toFixed(1)}px)`; }
     for (const h of HOOD_IDS) {
-      const b = W.hoods[h]!, mx = (b.x0 + b.x1) / 2, mz = (b.z0 + b.z1) / 2;
-      // hang the label below whichever edge of the neighbourhood is lowest on screen
-      const [x, y] = [[mx, b.z0], [mx, b.z1], [b.x0, mz], [b.x1, mz]].map(([ex, ez]) => toScreen(ex, 0, ez)).reduce((p, q) => (q[1] > p[1] ? q : p));
+      // hang the label under the corner nearest the camera (unique at every azimuth; edge midpoints tie on square hoods and flicker)
+      const b = W.hoods[h]!, [x, y] = toScreen(Math.sin(theta) > 0 ? b.x1 : b.x0, 0, Math.cos(theta) > 0 ? b.z1 : b.z0);
       labelEls[h]!.style.transform = `translate(${x.toFixed(1)}px,${(y + 8).toFixed(1)}px)`;
     }
     overlay.classList.toggle('near', viewH < 70);
@@ -221,11 +218,11 @@ export function createMap(host: HTMLDivElement, overlay: HTMLDivElement, cb: Map
     const prev = pts.get(e.pointerId)!; pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (pts.size === 2) {
       const [a, b] = [...pts.values()], d = Math.hypot(a.x - b.x, a.y - b.y);
-      if (pinch) { zoomAt(pinch / d, (a.x + b.x) / 2, (a.y + b.y) / 2); cb.onUserMove(); apply(); }
+      if (pinch) { zoomAt(pinch / d, (a.x + b.x) / 2, (a.y + b.y) / 2); apply(); }
       pinch = d; return;
     }
     if (!drag) return;
-    if (!drag.moved && Math.hypot(e.clientX - drag.x, e.clientY - drag.y) > 6) { drag.moved = true; el.setPointerCapture(e.pointerId); host.classList.add('dragging'); cb.onUserMove(); }
+    if (!drag.moved && Math.hypot(e.clientX - drag.x, e.clientY - drag.y) > 6) { drag.moved = true; el.setPointerCapture(e.pointerId); host.classList.add('dragging'); }
     if (!drag.moved) return;
     if (drag.turn) { const d = e.clientX - drag.tx; if (Math.abs(d) > 110) { drag.tx = e.clientX; cb.onTurn(d > 0 ? 1 : -1); } return; }
     panBy(e.clientX - prev.x, e.clientY - prev.y); apply();
@@ -236,7 +233,7 @@ export function createMap(host: HTMLDivElement, overlay: HTMLDivElement, cb: Map
     if (drag?.moved) cutDirty = true;
     drag = null; host.classList.remove('dragging');
   };
-  const onWheel = (e: WheelEvent) => { e.preventDefault(); anim = null; cb.onUserMove(); zoomAt(Math.exp(e.deltaY * 0.0015), e.clientX, e.clientY); apply(); cutDirty = true; };
+  const onWheel = (e: WheelEvent) => { e.preventDefault(); anim = null; zoomAt(Math.exp(e.deltaY * 0.0015), e.clientX, e.clientY); apply(); cutDirty = true; };
   const onCtx = (e: Event) => e.preventDefault();
   const onResize = () => { Wpx = innerWidth; Hpx = innerHeight; renderer.setSize(Wpx, Hpx); composer.setSize(Wpx, Hpx); refit(0); };
   el.addEventListener('pointerdown', onDown); el.addEventListener('pointermove', onMove);
@@ -272,7 +269,7 @@ export function createMap(host: HTMLDivElement, overlay: HTMLDivElement, cb: Map
     setOverview: on => overlay.classList.toggle('ov', on),
     setRotation: k => new Promise<void>(res => { rotK = ((k % 4) + 4) % 4; refit(900, res); }),
     facing: id => W.pins[id].facing,
-    zoomBy: f => { cb.onUserMove(); flyTo(target.clone(), clampH(viewH * f), theta, 350); },
+    zoomBy: f => { flyTo(target.clone(), clampH(viewH * f), theta, 350); },
     setTime,
     destroy: () => {
       renderer.setAnimationLoop(null);
