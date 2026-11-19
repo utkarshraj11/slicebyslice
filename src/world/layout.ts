@@ -157,6 +157,32 @@ export function buildWorld(): World {
   train(1, -42.6, 5); train(2, -42.6, 3); train(4, -44, 6); train(6, -42.6, 4); train(7, -50, 2); train(9, -42.6, 5);
   train(3, -55, 3, 2.2); train(8, -48, 3, -1.8);
 
+  /* ---------- Newport, Jersey City: glass towers on the river, the mall, the Hudson River Waterfront Walkway, a marina ---------- */
+  W.road(-50, 46, 2.4, 30); W.road(-63, 46, 2.4, 30);                                                  // Washington Blvd, Marin Blvd
+  W.road(-76, 57, 32, 2.4); W.road(-76, 67, 32, 2.4);                                                  // Pavonia Ave, Newport Pkwy
+  W.pave(-60.6, 46, 10.6, 30); W.pave(-47.6, 46, 3.6, 30);
+  for (const [x, z, w, d, fl, glass] of [[-59.8, 47.2, 4.6, 4.2, 22, true], [-54, 47.6, 3.4, 3.6, 18, true], [-59.6, 60.2, 4.2, 4.6, 16, false], [-54.2, 60.6, 3.4, 3.4, 20, true], [-59.4, 70.2, 5, 4.6, 14, true], [-54, 70.4, 2.8, 3.8, 10, false]] as const)
+    W.building(x, z, w, d, fl, glass ? pick(['#9fc3cf', '#a9c3d6', '#8fb3c4', '#b7c9d6']) : pick(STONE), { glass, fronts: ['E', 'S'], shop: !glass });
+  W.building(-46.8, 50, 2, 1.6, 1, '#cfe2ee', { glass: true });                                        // PATH entrance
+  // the mall and its parking lot
+  W.building(-74, 47.2, 10.6, 9, 2, '#d8cdbd', { fronts: ['E', 'S'], shop: true, cornice: '#8a7f74' });
+  W.box(-71, 2.3, 50.4, 4.6, 0.25, 2.6, '#cfe2ee');                                                    // skylight
+  W.slab(-74, 59.6, 10.6, 7, '#8d8f93', 0.08);
+  for (let x = -73.4; x < -64; x += 1.3) for (const z of [60.6, 64.4]) W.box(x, 0.08, z, 0.06, 0.02, 1.4, '#f4efe3', false);
+  for (const [x, z, c] of [[-72.7, 61.2, '#d94a3a'], [-70.1, 61.2, '#3f7fbf'], [-66.2, 61.2, '#ece4d5'], [-71.4, 65, '#f2c230'], [-67.5, 65, '#2f3a48'], [-64.9, 65, '#5aa469']] as const)
+    { W.box(x, 0.08, z - 0.3, 0.6, 0.45, 1.25, c); W.box(x + 0.05, 0.5, z - 0.05, 0.5, 0.25, 0.7, '#bcd8ea'); }
+  grid(W, [[-76, -63]], [[69.4, 76]], { pal: [...BRICK, ...BROWN], floors: [3, 4], shop: 0.2 });
+  // the Hudson River Waterfront Walkway: lawn, promenade, railing, lamps, benches, trees
+  W.park(-44, 46, 6, 30); W.slab(-40.9, 46, 1.4, 30, '#e3dccf', 0.1);
+  W.box(-38.25, 0.1, 46, 0.08, 0.5, 30, '#3b3836');
+  for (let z = 47.5; z < 76; z += 4) { W.lamp(-39.3, z); W.box(-41.6, 0.1, z + 1.6, 0.4, 0.35, 1, '#8a6a45'); }
+  trees(W, -43.6, 47, -42, 75, 9); W.person(-40.4, 53); W.person(-40.1, 61.5); W.person(-40.5, 69);
+  // the marina: a floating dock and moored boats (the Hudson ferry lane at x -34 stays clear)
+  W.box(-36.6, -1, 51, 0.8, 1.06, 16, '#c9a77c');
+  for (const z of [55, 63]) W.box(-38, -1, z, 1.4, 1.06, 0.8, '#c9a77c');
+  for (const z of [52.4, 57.6, 60.2, 65.4]) { W.box(-37.7, -0.95, z, 0.9, 0.5, 1.8, '#f4efe3'); W.box(-37.5, -0.45, z + 0.5, 0.5, 0.35, 0.8, '#3f5a7a'); }
+  W.car('z', 46, 76, -49.4, 2, '#ece4d5'); W.car('z', 76, 46, -48.2, 2.2, '#f2c230'); W.car('x', -76, -44, 57.6, 1.8, '#3f7fbf');
+
   /* ---------- Central Park & Columbus Circle ---------- */
   W.hood = null;
   W.park(-30, -74, 42, 12); W.slab(-12, -71, 9, 4, '#7fc3cf', 0.1); trees(W, -29, -73, 11, -62.5, 34);
@@ -268,8 +294,38 @@ export function buildWorld(): World {
 
   /* ---------- context Brooklyn (and Prospect Park) between DUMBO and Midwood ---------- */
   W.hood = null;
-  W.context(22, 32, 68, 50, [2, 5], [[32, 38, 46, 50]]); W.park(32.4, 38.4, 13, 11.4); trees(W, 33, 39, 45, 49.4, 16);
-  W.context(46, 6, 68, 32, [3, 6]);
+  /* ---------- Downtown Brooklyn (east of DUMBO): Borough Hall, the tall dark tower, the savings bank clock tower, the arena ---------- */
+  W.road(46, 6, 2.4, 44); W.road(56, 6, 2.4, 44);                                                      // Adams St / Flatbush Ave
+  W.road(46, 14, 22, 2.4); W.road(46, 23, 22, 2.4); W.road(22, 32, 46, 2.4);                           // Fulton St, Livingston St, Atlantic Ave
+  W.pave(48.4, 6, 7.6, 26); W.pave(58.4, 6, 9.6, 26);
+  temple(W, 49.2, 8.6, 5.4, 4.4, 3, 'W'); W.cyl(51.9, 3.6, 10.8, 0.9, 0.9, 1.6, '#ece3d0', 12); W.cyl(51.9, 5.2, 10.8, 0.9, 0.2, 1.1, '#c9a24a', 12); // Borough Hall
+  W.building(60, 8.8, 4, 4, 28, '#3f3a3a', { glass: true });                                            // the tall dark tower
+  W.building(64.4, 8.6, 3.2, 4.4, 9, pick(STONE), { fronts: ['W'], shop: true, tank: true });
+  const sb = W.building(60.6, 26, 4, 4, 15, '#d7c19b', { fronts: ['W', 'N'], shop: true });            // the savings bank tower
+  W.building(61.2, 26.6, 2.8, 2.8, 3, '#d7c19b', { y0: sb, cornice: '#cdb48c' });
+  for (const [x, z] of [[62.6, 26.55], [61.15, 28]] as const) W.box(x - 0.6, sb + 1.2, z - 0.06, 1.2, 1.2, 0.08, '#fff8ec'); // clock faces
+  W.add(at(new THREE.Mesh(new THREE.SphereGeometry(1.5, 16, 10, 0, Math.PI * 2, 0, Math.PI / 2), lam('#c9a24a')), 62.6, sb + 3.3, 28));
+  const arena = W.cyl(52.2, 0, 28.6, 3.2, 3.4, 2.4, '#8a4a32', 24); arena.scale.set(1.15, 1, 0.9);           // the arena, rusted steel
+  W.cyl(52.2, 2.4, 28.6, 2.6, 2.6, 0.1, '#6b3a2a', 24).scale.set(1.15, 1, 0.9);
+  fillBlock(W, 48.4, 16.4, 56, 23, { pal: [...STONE, ...BRICK], floors: [5, 10], shop: 0.6 });
+  fillBlock(W, 58.4, 16.4, 68, 23, { pal: [...STONE, ...GLASS], floors: [8, 14], shop: 0.5, glass: false });
+  fillBlock(W, 64.6, 25.4, 68, 32, { pal: BRICK, floors: [4, 7], shop: 0.5 });
+  W.car('z', 6, 50, 56.6, 2.2, '#f2c230'); W.car('z', 50, 6, 57.8, 2, '#3f7fbf'); W.car('x', 22, 68, 32.6, 2, '#d9473a', { bus: true }); W.car('x', 68, 46, 15.8, 1.8, '#ece4d5');
+
+  /* ---------- Brooklyn Heights brownstones, Prospect Park with its lake, Grand Army Plaza, the library ---------- */
+  W.road(26, 34.4, 2.4, 15.6); W.road(22, 40, 10.4, 2.2);
+  W.pave(22, 34.4, 24, 15.6); W.pave(48.4, 34.4, 19.6, 15.6);
+  fillBlock(W, 22, 34.4, 26, 40, { pal: BROWN, floors: [3, 4], shop: 0.1 });
+  fillBlock(W, 22, 42.2, 26, 50, { pal: BROWN, floors: [3, 4], shop: 0.1 });
+  fillBlock(W, 28.4, 34.4, 32.2, 50, { pal: BROWN, floors: [3, 5], shop: 0.1 });
+  fillBlock(W, 32.4, 34.4, 46, 38.2, { pal: [...BROWN, ...BRICK], floors: [4, 6], shop: 0.3 });
+  W.park(32.4, 38.4, 13, 11.6); W.box(36, 0, 43, 6, 0.1, 3.6, lam('#6fb7c4'), false); trees(W, 33, 39, 45, 49.6, 14); // the park and its lake
+  W.cyl(47.2, 0.1, 37.2, 2.4, 2.4, 0.1, '#e3dccf', 20); W.cyl(47.2, 0.2, 37.2, 0.9, 0.9, 0.35, '#cdb99a', 14); W.cyl(47.2, 0.5, 37.2, 0.7, 0.7, 0.06, '#9fd4e0', 14);
+  W.box(44.2, 0, 39.4, 1.1, 3.8, 1.1, '#efe8da'); W.box(47.6, 0, 39.4, 1.1, 3.8, 1.1, '#efe8da'); W.box(44.2, 3.8, 39.4, 4.5, 1.5, 1.1, '#f4efe3'); // Grand Army Plaza's arch
+  W.building(49.2, 38.6, 5, 4.6, 3, '#e0cfae', { fronts: ['W'], cornice: '#cdb48c', roof: '#cfc8bb' });  // the library
+  fillBlock(W, 58.4, 34.4, 68, 42, { pal: [...BROWN, ...BRICK], floors: [3, 5], shop: 0.2 });
+  fillBlock(W, 58.4, 43.4, 68, 50, { pal: BROWN, floors: [3, 4], shop: 0.15 });
+  fillBlock(W, 48.4, 43.4, 56, 50, { pal: BROWN, floors: [3, 4], shop: 0.15 });
 
   /* ---------- the Greenpoint / North Williamsburg waterfront, north of DUMBO along the East River ---------- */
   // piers stop at x 18, clear of the East River ferry lane (x 17)
@@ -313,7 +369,18 @@ export function buildWorld(): World {
   W.cyl(35.6, 0, -12.6, 0.6, 0.45, 14, '#8f4635', 10);                                                // its smokestack
   W.park(29.2, -8.2, 8.6, 11.6); trees(W, 30, -7.6, 37, 2.6, 6);                                       // Domino Park
   W.building(38.6, -14.6, 4, 4, 14, pick(GLASS), { glass: true });                                    // a new tower behind it
-  W.context(22, 50, 44, 76, [2, 4]);
+  /* ---------- Green-Wood Cemetery and Park Slope, down toward Midwood ---------- */
+  W.road(22, 50, 22, 2); W.road(33, 52, 2.4, 24); W.road(35.4, 61, 8.6, 2.2); W.road(35.4, 69, 8.6, 2.2);
+  W.slab(22, 52, 11, 24, '#86b866', 0.08);                                                            // the cemetery's lawns
+  for (let x = 23; x < 32.4; x += 1.25) for (let z = 55; z < 75.4; z += 1.4) if (rnd() < 0.75) W.box(x + rr(-0.15, 0.15), 0.08, z, 0.3, rr(0.35, 0.6), 0.14, pick(['#b9b3aa', '#a9a49c', '#c9c3b8']), false);
+  trees(W, 22.6, 54, 32.4, 75.4, 12);
+  for (const x of [25.6, 29.4]) { W.box(x, 0, 52.2, 1.2, 3.6, 1.2, '#9a8f80'); W.add(at(new THREE.Mesh(new THREE.ConeGeometry(0.75, 2.2, 4), lam('#7d7266')), x + 0.6, 4.7, 52.8, Math.PI / 4)); }
+  W.box(26.8, 2.2, 52.3, 2.6, 1, 1, '#9a8f80');                                                        // its Gothic gate
+  W.pave(35.4, 52, 8.6, 24);
+  fillBlock(W, 35.4, 52, 44, 61, { pal: BROWN, floors: [3, 4], shop: 0.15 });
+  fillBlock(W, 35.4, 63.2, 44, 69, { pal: BROWN, floors: [3, 4], shop: 0.15 });
+  fillBlock(W, 35.4, 71.2, 44, 76, { pal: [...BROWN, ...BRICK], floors: [3, 4], shop: 0.4 });
+  W.car('z', 52, 76, 33.6, 2, '#5aa469'); W.car('z', 76, 52, 34.8, 1.8, '#f2c230');
 
   /* ---------- Midwood: Avenue J east-west, the B/Q in its cut, Di Fara at E 15th St ---------- */
   hood('midwood', 44, 50, 68, 76, 8);
