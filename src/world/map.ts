@@ -345,7 +345,8 @@ export function createMap(host: HTMLDivElement, overlay: HTMLDivElement, cb: Map
     if (!still) for (const m of W.movers) {
       const p = m.axis === 'x' ? 'x' : 'z', lo = Math.min(m.a, m.b), hi = Math.max(m.a, m.b);
       m.obj.position[p] += m.speed * dt;
-      if (m.obj.position[p] > hi) m.obj.position[p] = lo; else if (m.obj.position[p] < lo) m.obj.position[p] = hi;
+      if (m.bounce) { if (m.obj.position[p] > hi || m.obj.position[p] < lo) { m.speed = -m.speed; m.obj.position[p] = Math.min(hi, Math.max(lo, m.obj.position[p])); } }
+      else if (m.obj.position[p] > hi) m.obj.position[p] = lo; else if (m.obj.position[p] < lo) m.obj.position[p] = hi;
     }
     apply();
     if (cutDirty && !anim) { cutDirty = false; cutaway(); }
