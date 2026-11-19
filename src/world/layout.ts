@@ -95,7 +95,67 @@ export function buildWorld(): World {
   for (const z of [23.4, 25.6]) W.box(-39.4, -1, z, 3, 1.1, 1.2, '#c9a77c');
   W.car('z', -8, 28, -53.1, 2.2, '#f2c230'); W.car('z', 28, -8, -51.7, 2, '#3f7fbf'); W.car('x', -72, -43, 1.2, 2, '#ece4d5');
   for (let i = 0; i < 4; i++) W.person(-50.6 + (i % 2) * 0.3, -4.6 + i * 0.5);
-  trees(W, -75, -13, -73, 31, 6);
+  trees(W, -75, -8, -73, 27, 5);
+
+  /* ---------- the Weehawken cliffs: the Palisades rise behind the Jersey waterfront north of Hoboken ---------- */
+  W.hood = null;
+  const ROCK = ['#7d6f63', '#8a7b6d', '#6e6258', '#94867a'], rock = () => lam(pick(ROCK)), cliffTop = lam('#a3cf78');
+  const CH = 5.5; // cliff height
+  W.box(-76, 0, -74, 20, CH, 58, [rock(), rock(), cliffTop, rock(), rock(), rock()]);            // the plateau (Weehawken / Union City)
+  for (let z = -74; z < -16; z += rr(0.9, 1.5)) {                                                    // its broken east face: basalt columns
+    const w = rr(0.9, 1.6), out = rr(0.6, 3.2), h = CH * rr(0.62, 1.0);
+    W.box(-56, 0, z, out, h, w, rock());
+    if (rnd() < 0.35) W.box(-56 + out + rr(0.2, 1.2), 0, z + rr(0, w), rr(0.4, 0.9), rr(0.3, 0.7), rr(0.4, 0.9), rock()); // fallen rock
+  }
+  for (const [z0, h] of [[-16, 4.2], [-14, 2.8], [-12.5, 1.4]] as const) W.box(-76, 0, z0, 22, h, 1.6, rock()); // bare rock, stepping down to Hoboken
+  for (let z = -74; z < -16.5; z += rr(1.2, 2.2)) W.box(-57.4 + rr(-0.6, 0.4), CH, z, rr(0.8, 1.6), rr(0.25, 0.8), rr(0.8, 1.6), rock()); // ragged rock along the cliff edge
+  for (let x = -75.5; x < -55; x += rr(1.4, 2.4)) W.box(x, CH, -17.4 + rr(-0.4, 0.3), rr(0.9, 1.6), rr(0.25, 0.7), rr(0.8, 1.4), rock()); // and its south end
+  // Boulevard East along the top: road, houses looking at the Manhattan skyline, trees on the edge
+  W.box(-62, CH, -74, 2.6, 0.1, 58, '#5b6068', false);
+  for (let z = -73; z < -18; z += rr(2.6, 3.6)) {
+    if (rnd() < 0.8) W.building(-67.6, z, 3.2, rr(2.2, 3), Math.round(rr(2, 5)), pick([...BROWN, '#d8c7a6', '#c9b8a6']), { fronts: ['E'], y0: CH, tank: false });
+    if (rnd() < 0.7) W.tree(rr(-58.6, -57), z + 1, rr(0.7, 1), CH);
+  }
+  for (let i = 0; i < 18; i++) W.tree(rr(-75.5, -69), rr(-73, -18), rr(0.8, 1.2), CH);
+  W.car('z', -74, -16, -61.4, 1.8, '#3f7fbf', { y: CH }); W.car('z', -16, -74, -60, 2, '#ece4d5', { y: CH });
+  // below the cliff: River Road, the riverside walkway, and the Port Imperial ferry terminal
+  W.road(-50, -74, 2.6, 66); W.park(-47.4, -74, 9.4, 64); trees(W, -46.8, -73, -42, -12, 14);
+  W.slab(-41.6, -74, 1.2, 64, '#e3dccf', 0.1);                                                       // the walkway along the river
+  W.building(-45, -45, 5, 3, 1, '#cfe2ee', { glass: true, fronts: ['E'] });                          // ferry terminal
+  W.box(-40.4, -1, -44.2, 4.2, 1.1, 1.6, '#c9a77c'); W.box(-37.4, -1, -45.4, 1.2, 1.15, 4, '#c9a77c'); // ferry pier
+  W.car('z', -74, -8, -49.4, 2.2, '#f2c230'); W.car('z', -8, -74, -48, 2, '#5aa469');
+
+  /* ---------- the Lackawanna rail yards: tracks fanning west from Hoboken Terminal, under the long train-shed canopies ---------- */
+  const YZ = 29, TRACKS = 10, PITCH = 1.6, YX0 = -76, YX1 = -42;
+  W.slab(YX0, YZ - 0.6, YX1 - YX0 + 1.4, TRACKS * PITCH + 1, '#8f857c', 0.08);                     // ballast
+  const trackZ = (i: number) => YZ + 0.4 + i * PITCH;
+  for (let i = 0; i < TRACKS; i++) {
+    const z = trackZ(i);
+    for (const dz of [-0.36, 0.28]) W.box(YX0, 0.08, z + dz, YX1 - YX0, 0.07, 0.08, '#4a4542', false);
+    W.box(YX1, 0, z - 0.45, 0.4, 0.5, 0.9, '#d9473a');                                               // buffer stop at the Terminal end
+  }
+  for (let i = 0; i < TRACKS; i += 2) {                                                              // platforms between track pairs, under canopies
+    const z = trackZ(i) + PITCH / 2 - 0.35;
+    W.box(-63, 0, z, 21, 0.45, 0.7, '#cfc6b6');
+    W.box(-63, 2.3, z - 0.35, 21, 0.14, 1.4, '#4f6b5a');
+    for (let x = -62.5; x < -42; x += 5) W.box(x, 0.45, z + 0.3, 0.12, 1.85, 0.12, '#3b3836');
+  }
+  for (const x of [-66, -70]) { W.box(x, 0, YZ - 0.4, 0.25, 3.4, 0.25, '#3b3836'); W.box(x, 0, YZ + TRACKS * PITCH - 0.2, 0.25, 3.4, 0.25, '#3b3836'); W.box(x, 3.2, YZ - 0.4, 0.25, 0.25, TRACKS * PITCH + 0.05, '#3b3836'); } // signal gantries
+  /** A train of `cars` cars on track i, its east end at x; a moving one shunts between the yard throat and the buffers. */
+  const train = (i: number, x: number, cars: number, speed = 0) => {
+    const g = new THREE.Group(), L = 4.2;
+    for (let c = 0; c < cars; c++) {
+      const body = new THREE.Mesh(new THREE.BoxGeometry(L - 0.2, 1, 0.86), lam('#c9cdd2')); body.position.set(-c * L - L / 2, 0.66, 0);
+      const s1 = new THREE.Mesh(new THREE.BoxGeometry(L - 0.2, 0.1, 0.88), lam('#e8833a')); s1.position.set(-c * L - L / 2, 0.55, 0);
+      const s2 = new THREE.Mesh(new THREE.BoxGeometry(L - 0.2, 0.08, 0.88), lam('#3f5a9a')); s2.position.set(-c * L - L / 2, 0.42, 0);
+      const win = new THREE.Mesh(new THREE.BoxGeometry(L - 0.6, 0.22, 0.9), lam('#4a5560')); win.position.set(-c * L - L / 2, 0.86, 0);
+      g.add(body, s1, s2, win);
+    }
+    g.position.set(x, 0.1, trackZ(i)); W.add(g);
+    if (speed) W.movers.push({ obj: g, axis: 'x', a: YX0 + cars * L + 0.5, b: YX1 - 0.5, speed, bounce: true }); // stays on the plate
+  };
+  train(1, -42.6, 5); train(2, -42.6, 3); train(4, -44, 6); train(6, -42.6, 4); train(7, -50, 2); train(9, -42.6, 5);
+  train(3, -55, 3, 2.2); train(8, -48, 3, -1.8);
 
   /* ---------- Central Park & Columbus Circle ---------- */
   W.hood = null;

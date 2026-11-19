@@ -8,7 +8,8 @@ import type { Dir } from './compass';
 
 export interface Bounds { x0: number; z0: number; x1: number; z1: number; y1: number }
 export interface Pin { pos: THREE.Vector3; facing: Dir; hood: HoodId; box: Bounds }
-export interface Mover { obj: THREE.Object3D; axis: 'x' | 'z'; a: number; b: number; speed: number }
+/** Loops from a to b (or, with `bounce`, goes back and forth between them). */
+export interface Mover { obj: THREE.Object3D; axis: 'x' | 'z'; a: number; b: number; speed: number; bounce?: boolean }
 
 /* seeded RNG: every build is identical */
 let seed = 1;
