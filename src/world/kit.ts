@@ -2,7 +2,6 @@
    Everything is plain boxes, cylinders and prisms; the look comes from tiny canvas textures (4 px per unit,
    nearest-filtered) and the pixelated render pass in map.ts. */
 import * as THREE from 'three';
-import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import type { HoodId } from '../data/places';
 import type { Dir } from './compass';
 
@@ -84,7 +83,6 @@ export class World {
   movers: Mover[] = [];
   /** all land (for picking) */
   ground: THREE.Object3D[] = [];
-  private filler: THREE.BufferGeometry[] = [];
   private crowns: [number, number, number, number, THREE.Color][] = [];
   private trunks: [number, number, number, number][] = [];
   hood: HoodId | null = null;
@@ -237,39 +235,7 @@ export class World {
     this.add(g); this.movers.push({ obj: g, axis, a, b, speed: speed * Math.sign(b - a) });
   }
 
-  /**
-   * Context city (outside the neighbourhoods): pale low blocks on a street grid, merged into one mesh.
-   * shortcut: one shared window tile, so every context facade has the same pattern; fine for background.
-   */
-  context(x0: number, z0: number, x1: number, z1: number, floors: [number, number], skip: [number, number, number, number][] = []) {
-    this.slab(x0, z0, x1 - x0, z1 - z0, '#8d8f93', 0.04);
-    const cell = 7;
-    for (let x = x0 + 1; x + 5 <= x1 - 0.5; x += cell) for (let z = z0 + 1; z + 5 <= z1 - 0.5; z += cell) {
-      const bw = Math.min(5.5, x1 - 1 - x), bd = Math.min(5.5, z1 - 1 - z);
-      if (skip.some(([a, b, c, d]) => x < c && x + bw > a && z < d && z + bd > b)) continue;
-      this.fill(x, z, bw, 0.12, bd, '#e3dccf', '#e3dccf');
-      const n = 1 + Math.floor(rnd() * 3), wall = pick(['#d9c2a8', '#cdb5a0', '#c9b8a6', '#d8cdbd', '#bfb3a6']);
-      for (let i = 0; i < n; i++) {
-        const sw = (bw - 0.6) / n;
-        this.fill(x + 0.3 + i * sw, z + 0.3, sw - 0.15, Math.round(rr(floors[0], floors[1])), bd - 0.6, i % 2 ? wall : pick(['#d9c2a8', '#c9b8a6', '#cdb5a0']), '#cfc8bb', 0.12);
-      }
-    }
-  }
-  /** One merged context box: UVs scaled so the shared window tile repeats once per 3 units × 1 storey. */
-  private fill(x0: number, z0: number, w: number, h: number, d: number, wall: string, roof: string, y0 = 0) {
-    const g = new THREE.BoxGeometry(w, h, d).toNonIndexed();
-    const uv = g.getAttribute('uv') as THREE.BufferAttribute, n = uv.count, col = new Float32Array(n * 3);
-    const cw = new THREE.Color(wall), cr = new THREE.Color(roof);
-    for (let i = 0; i < n; i++) {
-      const face = Math.floor(i / 6), top = face === 2 || face === 3, L = face < 2 ? d : w;
-      uv.setXY(i, top ? 0.02 : (uv.getX(i) * L) / 3, top ? 0.02 : uv.getY(i) * h);
-      (top ? cr : cw).toArray(col, i * 3);
-    }
-    g.setAttribute('color', new THREE.BufferAttribute(col, 3));
-    g.translate(x0 + w / 2, y0 + h / 2, z0 + d / 2);
-    this.filler.push(g);
-  }
-  /** Instance the trees and merge the context city into one mesh (call once, after building). */
+  /** Instance the trees (call once, after building). */
   finish() {
     const M = new THREE.Matrix4(), Q = new THREE.Quaternion(), P = new THREE.Vector3(), S = new THREE.Vector3();
     const crowns = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1, 2), new THREE.MeshLambertMaterial({ color: '#ffffff' }), this.crowns.length);
@@ -278,15 +244,5 @@ export class World {
     const trunks = new THREE.InstancedMesh(tg, lam('#7a5236'), this.trunks.length);
     this.trunks.forEach(([x, y, z, h], i) => trunks.setMatrixAt(i, M.compose(P.set(x, y, z), Q, S.set(1, h, 1))));
     this.add(crowns); this.add(trunks); this.crowns = []; this.trunks = [];
-    if (!this.filler.length) return;
-    const [c, g] = canvas(12, 4), [e, ge] = canvas(12, 4);
-    g.fillStyle = '#fff'; g.fillRect(0, 0, 12, 4); ge.fillStyle = '#000'; ge.fillRect(0, 0, 12, 4);
-    for (const x of [1, 4, 7, 10]) { g.fillStyle = x === 7 ? '#f6e3a8' : '#9fb7c8'; g.fillRect(x, 1, 1, 2); if (x === 7) { ge.fillStyle = '#fff'; ge.fillRect(x, 1, 1, 2); } }
-    const map = pixel(new THREE.CanvasTexture(c)), em = pixel(new THREE.CanvasTexture(e));
-    for (const t of [map, em]) t.wrapS = t.wrapT = THREE.RepeatWrapping;
-    const m = new THREE.MeshLambertMaterial({ map, emissiveMap: em, emissive: '#ffcf6a', emissiveIntensity: 0, vertexColors: true });
-    this.windows.push(m);
-    this.add(new THREE.Mesh(mergeGeometries(this.filler), m));
-    this.filler = [];
   }
 }
