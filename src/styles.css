@@ -132,6 +132,7 @@ header p{margin:0;font-size:14.5px;line-height:1.45;color:#4d463f;max-width:340p
   .btn{padding:9px 12px;font-size:13px}
   .hint,.zoomctl{display:none}
   .scalebar{left:14px;bottom:auto;top:96px}
+  .app:not(.zoomed) .scalebar{top:auto;bottom:126px} /* the overview header is tall: sit level with the compass instead */
   .panel{left:0;right:0;bottom:0;top:auto;width:auto;max-height:74vh;border-radius:20px 20px 0 0;border-bottom:0;box-shadow:0 -3px 0 var(--ink);transform:translateY(105%)}
   .panel.open{transform:none}
   .hoodbar{bottom:64px}
