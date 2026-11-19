@@ -16,6 +16,7 @@ html,body{margin:0;height:100%;background:var(--paper);color:var(--ink);font-fam
 .overlay.near .pin3 .tag,.pin3.active .tag,.pin3:hover .tag{opacity:1}
 .hlabel{position:absolute;left:0;top:0;pointer-events:auto;display:none;grid-template-columns:auto auto;column-gap:7px;align-items:center;text-align:left;translate:-50% 0;background:var(--card);border:1.5px solid var(--ink);border-radius:999px;padding:6px 14px 6px 10px;box-shadow:2px 2px 0 var(--ink);cursor:pointer;color:var(--ink)}
 .overlay.ov .hlabel{display:grid}
+.overlay.ov .hlabel.crowded{visibility:hidden}
 .hlabel:hover{background:#fff}
 .hlabel i{grid-row:span 2;width:11px;height:11px;border-radius:50%;border:1.2px solid var(--ink)}
 .hlabel b{font:800 14px/1.1 Fraunces,Georgia,serif}
