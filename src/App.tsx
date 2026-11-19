@@ -48,8 +48,8 @@ export default function App() {
         <button className="btn primary" onClick={toggleList}><ListIcon />All {PLACES.length} spots</button>
       </div>
 
-      <div className="hint">Drag to pan · right- or shift-drag to turn · scroll to zoom · click a neighborhood</div>
-      <Compass rot={s.rot} />
+      <div className="hint">Drag to turn · right- or shift-drag to pan · scroll to zoom · click a neighborhood or a pizzeria</div>
+      <Compass />
       <HoodBar hood={s.mode === 'hood' ? s.curHood : null} curPlace={s.curPlace} />
       <ReviewCard placeId={s.curPlace} />
       <ListPanel open={s.listOpen} by={s.listBy} />

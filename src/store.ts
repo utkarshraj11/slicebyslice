@@ -76,6 +76,8 @@ export function setRotation(k: number) {
   set({ rot: k });
   void map?.setRotation(k);
 }
+/** The user dragged the view round to near view k: record it without moving the camera. */
+export const syncRot = (k: number) => set({ rot: ((k % 4) + 4) % 4 });
 /** +1 turns the map a quarter turn counter-clockwise (the camera orbits clockwise). */
 export const rotate = (delta: number) => setRotation(state.rot + delta);
 export function closeCard(silent?: boolean) {
