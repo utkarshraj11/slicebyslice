@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 import { PLACES, HOOD_IDS } from './data/places';
 import {
   useStore, getState, routeHash, onHashChange, back, stepPlace,
-  showOverview, toggleList, rotate,
+  showOverview, toggleList, rotate, panMap,
 } from './store';
 import { MapView } from './components/MapView';
 import { ReviewCard } from './components/ReviewCard';
@@ -21,6 +21,10 @@ export default function App() {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') back();
       if (getState().curPlace && (e.key === 'ArrowRight' || e.key === 'ArrowLeft')) stepPlace(e.key === 'ArrowRight' ? 1 : -1);
+      else if (e.key.startsWith('Arrow') && !(e.target instanceof HTMLInputElement)) {
+        const d = 80, k = e.key.slice(5);
+        panMap(k === 'Left' ? d : k === 'Right' ? -d : 0, k === 'Up' ? d : k === 'Down' ? -d : 0);
+      }
       if (!e.metaKey && !e.ctrlKey && !e.altKey && !(e.target instanceof HTMLInputElement)) {
         if (e.key === 'q' || e.key === 'Q') rotate(1);
         if (e.key === 'e' || e.key === 'E') rotate(-1);
@@ -48,7 +52,7 @@ export default function App() {
         <button className="btn primary" onClick={toggleList}><ListIcon />All {PLACES.length} spots</button>
       </div>
 
-      <div className="hint">Drag to turn · right- or shift-drag to pan · scroll to zoom · click a neighborhood or a pizzeria</div>
+      <div className="hint">Drag to turn · click a neighborhood or pizzeria to fly there · scroll or pinch to zoom · two-finger swipe, arrows or right-drag to move</div>
       <Compass />
       <HoodBar hood={s.mode === 'hood' ? s.curHood : null} curPlace={s.curPlace} />
       <ReviewCard placeId={s.curPlace} />

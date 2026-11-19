@@ -33,6 +33,8 @@ export interface MapHandle {
   zoomBy(f: number): void;
   /** 0 day, 1 dusk, 2 night */
   setTime(k: number): void;
+  /** Move the view by screen pixels (arrow keys). */
+  pan(dx: number, dy: number): void;
   destroy(): void;
 }
 
@@ -41,6 +43,12 @@ const M_PER_UNIT = 4;
 const PIXEL_CSS = 1.5;
 /** Radians of turn per px of horizontal drag. */
 const TURN = 0.008;
+/** Idle seconds before the whole-map view starts its slow turn, and its speed (rad/s). */
+const IDLE = 6, DRIFT = 0.05;
+/** Flick momentum: top coasting speed (rad/s) and decay rate (1/s); the coast is at most SPIN_MAX / SPIN_DECAY rad. */
+const SPIN_MAX = 2.5, SPIN_DECAY = 5;
+/** Keep the view's centre over the plate, so the island can't be lost in empty paper. */
+const PAN_LIMIT = { x0: -82, x1: 74, z0: -80, z1: 82 };
 const ELEV = Math.atan(1 / Math.SQRT2); // true isometric tilt
 const UP = new THREE.Vector3(0, 1, 0);
 const WORLD: Bounds = { x0: -76, z0: -74, x1: 68, z1: 76, y1: 12 };
@@ -141,7 +149,7 @@ export function createMap(host: HTMLDivElement, overlay: HTMLDivElement, cb: Map
   const goalTheta = () => { const g = thetaOf(rotK); return theta + (((g - theta) % (2 * Math.PI)) + 3 * Math.PI) % (2 * Math.PI) - Math.PI; };
   /** After a free drag-turn, framing keeps the user's angle until a quarter turn is asked for. */
   let keepTheta = false;
-  function refit(dur = 1100, done?: () => void) { const th = keepTheta ? theta : goalTheta(), f = fit(boundsFor(cb.getView()), th); flyTo(f.target, f.viewH, th, dur, done); }
+  function refit(dur = 1100, done?: () => void) { spin = 0; touch(); const th = keepTheta ? theta : goalTheta(), f = fit(boundsFor(cb.getView()), th); flyTo(f.target, f.viewH, th, dur, done); }
   const clampH = (h: number) => Math.min(320, Math.max(10, h));
 
   /* ---------- pins and labels (DOM, projected each frame) ---------- */
@@ -205,12 +213,16 @@ export function createMap(host: HTMLDivElement, overlay: HTMLDivElement, cb: Map
   const el = renderer.domElement;
   const pts = new Map<number, { x: number; y: number }>();
   let drag: { x: number; y: number; moved: boolean; pan: boolean } | null = null, pinch = 0, mid: [number, number] | null = null;
-  const panBy = (dx: number, dy: number) => { const { r, u } = basis(theta), s = px(); target.addScaledVector(r, -dx / s).addScaledVector(u, dy / s); ground(target, theta); };
+  const clampTarget = () => { target.x = Math.min(PAN_LIMIT.x1, Math.max(PAN_LIMIT.x0, target.x)); target.z = Math.min(PAN_LIMIT.z1, Math.max(PAN_LIMIT.z0, target.z)); };
+  const panBy = (dx: number, dy: number) => { const { r, u } = basis(theta), s = px(); target.addScaledVector(r, -dx / s).addScaledVector(u, dy / s); ground(target, theta); clampTarget(); };
+  /** Spin left over from a drag-turn (rad/s), decaying; and the time of the last user input (for the idle drift). */
+  let spin = 0, lastInput = performance.now(), lastMove = 0;
+  const touch = () => { lastInput = performance.now(); };
   function zoomAt(f: number, cx: number, cy: number) {
     const { r, u } = basis(theta), s = px(), ox = cx - Wpx / 2, oy = cy - Hpx / 2;
     const P = target.clone().addScaledVector(r, ox / s).addScaledVector(u, -oy / s);
     viewH = clampH(viewH * f); const s2 = px();
-    target.copy(P).addScaledVector(r, -ox / s2).addScaledVector(u, oy / s2); ground(target, theta);
+    target.copy(P).addScaledVector(r, -ox / s2).addScaledVector(u, oy / s2); ground(target, theta); clampTarget();
   }
   const ray = new THREE.Raycaster();
   function tap(cx: number, cy: number) {
@@ -236,7 +248,7 @@ export function createMap(host: HTMLDivElement, overlay: HTMLDivElement, cb: Map
     pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (pts.size === 2) { const [a, b] = [...pts.values()]; pinch = Math.hypot(a.x - b.x, a.y - b.y); drag = null; return; }
     drag = { x: e.clientX, y: e.clientY, moved: false, pan: e.button === 2 || e.shiftKey };
-    anim = null;
+    anim = null; spin = 0; touch();
   };
   const onMove = (e: PointerEvent) => {
     if (!pts.has(e.pointerId)) return;
@@ -250,17 +262,30 @@ export function createMap(host: HTMLDivElement, overlay: HTMLDivElement, cb: Map
     if (!drag.moved && Math.hypot(e.clientX - drag.x, e.clientY - drag.y) > 6) { drag.moved = true; el.setPointerCapture(e.pointerId); host.classList.add('dragging'); }
     if (!drag.moved) return;
     if (drag.pan) panBy(e.clientX - prev.x, e.clientY - prev.y);
-    else { theta -= (e.clientX - prev.x) * TURN; keepTheta = true; } // turn about the screen centre, content follows the cursor
-    apply();
+    else { // turn about the screen centre, content follows the cursor; remember the speed for the release
+      const d = -(e.clientX - prev.x) * TURN, now = performance.now(), dt = Math.max(8, now - lastMove) / 1000;
+      theta += d; keepTheta = true; spin = Math.max(-SPIN_MAX, Math.min(SPIN_MAX, spin * 0.5 + (d / dt) * 0.5)); lastMove = now;
+    }
+    touch(); apply();
   };
   const onUp = (e: PointerEvent) => {
     pts.delete(e.pointerId); if (pts.size < 2) { pinch = 0; mid = null; }
-    if (drag?.moved && !drag.pan) cb.onRotate(Math.round((-Math.PI / 4 - theta) / (Math.PI / 2)));
+    // a flick keeps turning a little; a drag that stopped before release doesn't
+    if (!drag?.moved || drag.pan || performance.now() - lastMove > 80 || still) spin = 0;
     if (drag && !drag.moved && e.button !== 2) tap(e.clientX, e.clientY);
     if (drag?.moved) cutDirty = true;
     drag = null; host.classList.remove('dragging');
   };
-  const onWheel = (e: WheelEvent) => { e.preventDefault(); anim = null; zoomAt(Math.exp(e.deltaY * 0.0015), e.clientX, e.clientY); apply(); cutDirty = true; };
+  const onWheel = (e: WheelEvent) => {
+    e.preventDefault(); anim = null; spin = 0; touch();
+    // shortcut: browsers don't say whether a wheel event came from a mouse or a trackpad. Pinch arrives with ctrlKey;
+    // trackpad swipes are pixel-mode with sideways or small/fractional steps; mouse wheels step in big whole numbers.
+    const swipe = !e.ctrlKey && e.deltaMode === 0 && (e.deltaX !== 0 || !Number.isInteger(e.deltaY) || Math.abs(e.deltaY) < 30);
+    if (e.ctrlKey) zoomAt(Math.exp(e.deltaY * 0.01), e.clientX, e.clientY);
+    else if (swipe) panBy(-e.deltaX, -e.deltaY);
+    else zoomAt(Math.exp(e.deltaY * (e.deltaMode === 1 ? 0.05 : 0.0015)), e.clientX, e.clientY);
+    apply(); cutDirty = true;
+  };
   const onCtx = (e: Event) => e.preventDefault();
   const onResize = () => { Wpx = innerWidth; Hpx = innerHeight; renderer.setSize(Wpx, Hpx); composer.setSize(Wpx, Hpx); refit(0); };
   el.addEventListener('pointerdown', onDown); el.addEventListener('pointermove', onMove);
@@ -269,7 +294,7 @@ export function createMap(host: HTMLDivElement, overlay: HTMLDivElement, cb: Map
   addEventListener('resize', onResize);
 
   /* ---------- loop ---------- */
-  let last = performance.now();
+  let last = performance.now(), syncedK = rotK;
   renderer.setAnimationLoop(now => {
     const dt = Math.min(0.05, (now - last) / 1000); last = now;
     if (anim) {
@@ -279,6 +304,12 @@ export function createMap(host: HTMLDivElement, overlay: HTMLDivElement, cb: Map
       theta = anim.from[2] + (anim.to[2] - anim.from[2]) * e;
       if (k >= 1) { const d = anim.done; anim = null; cutDirty = true; d?.(); }
     }
+    if (!anim && !drag && !still) {
+      if (Math.abs(spin) > 0.02) { theta += spin * dt; spin *= Math.exp(-SPIN_DECAY * dt); cutDirty = true; }
+      else if (spin) spin = 0;
+      else if (overlay.classList.contains('ov') && !cb.getView().panelOpen && now - lastInput > IDLE * 1000) { theta -= DRIFT * dt; keepTheta = true; }
+    }
+    if (!anim) { const k = (((Math.round((-Math.PI / 4 - theta) / (Math.PI / 2)) % 4) + 4) % 4); if (k !== syncedK) { syncedK = k; rotK = k; cb.onRotate(k); } }
     if (!still) for (const m of W.movers) {
       const p = m.axis === 'x' ? 'x' : 'z', lo = Math.min(m.a, m.b), hi = Math.max(m.a, m.b);
       m.obj.position[p] += m.speed * dt;
@@ -296,7 +327,8 @@ export function createMap(host: HTMLDivElement, overlay: HTMLDivElement, cb: Map
     setOverview: on => overlay.classList.toggle('ov', on),
     setRotation: k => new Promise<void>(res => { rotK = ((k % 4) + 4) % 4; keepTheta = false; refit(900, res); }),
     facing: id => W.pins[id].facing,
-    zoomBy: f => { flyTo(target.clone(), clampH(viewH * f), theta, 350); },
+    pan: (dx, dy) => { anim = null; spin = 0; touch(); panBy(dx, dy); cutDirty = true; },
+    zoomBy: f => { touch(); flyTo(target.clone(), clampH(viewH * f), theta, 350); },
     setTime,
     destroy: () => {
       renderer.setAnimationLoop(null);
