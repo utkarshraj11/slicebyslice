@@ -95,10 +95,7 @@ export function buildWorld(): World {
   for (const z of [23.4, 25.6]) W.box(-39.4, -1, z, 3, 1.1, 1.2, '#c9a77c');
   W.car('z', -8, 28, -53.1, 2.2, '#f2c230'); W.car('z', 28, -8, -51.7, 2, '#3f7fbf'); W.car('x', -72, -43, 1.2, 2, '#ece4d5');
   for (let i = 0; i < 4; i++) W.person(-50.6 + (i % 2) * 0.3, -4.6 + i * 0.5);
-  // the rest of the Jersey shore, north and south of Hoboken
-  W.hood = null;
-  W.context(-76, -74, -40, -11, [2, 4]); W.park(-40, -74, 2, 63); trees(W, -39.8, -73, -38.4, -12, 8);
-  W.context(-76, 31, -40, 76, [2, 4]); W.park(-40, 30, 2, 46); trees(W, -39.8, 31, -38.4, 75, 8);
+  trees(W, -75, -13, -73, 31, 6);
 
   /* ---------- Central Park & Columbus Circle ---------- */
   W.hood = null;
@@ -212,8 +209,7 @@ export function buildWorld(): World {
   /* ---------- context Brooklyn (and Prospect Park) between DUMBO and Midwood ---------- */
   W.hood = null;
   W.context(22, 32, 68, 50, [2, 5], [[32, 38, 46, 50]]); W.park(32.4, 38.4, 13, 11.4); trees(W, 33, 39, 45, 49.4, 16);
-  W.context(46, 6, 68, 32, [2, 4]);
-  W.context(25, -74, 68, 6, [2, 4]); W.park(22, -74, 3, 82); trees(W, 22.3, -73, 24.7, 7, 12); // Greenpoint / Long Island City waterfront
+  W.context(46, 6, 68, 32, [3, 6]);
   W.context(22, 50, 44, 76, [2, 4]);
 
   /* ---------- Midwood: Avenue J east-west, the B/Q in its cut, Di Fara at E 15th St ---------- */

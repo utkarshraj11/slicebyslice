@@ -178,14 +178,38 @@ export function createMap(host: HTMLDivElement, overlay: HTMLDivElement, cb: Map
   }
   const v3 = new THREE.Vector3();
   const toScreen = (x: number, y: number, z: number) => { v3.set(x, y, z).project(cam); return [((v3.x + 1) / 2) * Wpx, ((1 - v3.y) / 2) * Hpx] as const; };
+  const labelSize: Partial<Record<HoodId, [number, number]>> = {};
   function placeOverlay() {
-    for (const id in pinEls) { const p = W.pins[id].pos, [x, y] = toScreen(p.x, p.y, p.z); pinEls[id].style.transform = `translate(${x.toFixed(1)}px,${y.toFixed(1)}px)`; }
+    const pinBoxes: [number, number, number, number][] = [];
+    for (const id in pinEls) {
+      const p = W.pins[id].pos, [x, y] = toScreen(p.x, p.y, p.z);
+      pinEls[id].style.transform = `translate(${x.toFixed(1)}px,${y.toFixed(1)}px)`;
+      pinBoxes.push([x - 16, y - 46, x + 16, y + 2]);
+    }
+    if (!overlay.classList.contains('ov')) return void overlay.classList.toggle('near', viewH < 70);
+    // labels avoid pins and each other: try spots around the neighbourhood, nearest-to-camera first; else take the least overlap
+    const taken = pinBoxes.slice();
+    const overlap = (r: number[]) => taken.reduce((sum, q) => sum + Math.max(0, Math.min(r[2], q[2]) - Math.max(r[0], q[0])) * Math.max(0, Math.min(r[3], q[3]) - Math.max(r[1], q[1])), 0);
+    const dx = Math.sin(theta), dz = Math.cos(theta);
     for (const h of HOOD_IDS) {
-      // hang the label where a line from the neighbourhood's centre toward the camera leaves it: one point, moving smoothly as the view turns
-      const b = W.hoods[h]!, hw = (b.x1 - b.x0) / 2, hd = (b.z1 - b.z0) / 2, dx = Math.sin(theta), dz = Math.cos(theta);
-      const t = Math.min(hw / Math.max(1e-6, Math.abs(dx)), hd / Math.max(1e-6, Math.abs(dz)));
-      const [x, y] = toScreen(b.x0 + hw + dx * t, 0, b.z0 + hd + dz * t);
-      labelEls[h]!.style.transform = `translate(${x.toFixed(1)}px,${(y + 8).toFixed(1)}px)`;
+      const el = labelEls[h]!;
+      let size = labelSize[h]; if (!size && el.offsetWidth) size = labelSize[h] = [el.offsetWidth, el.offsetHeight];
+      const [lw, lh] = size ?? [0, 0];
+      const b = W.hoods[h]!, hw = (b.x1 - b.x0) / 2, hd = (b.z1 - b.z0) / 2, cx = b.x0 + hw, cz = b.z0 + hd;
+      // where a line from the centre in direction (ux, uz) leaves the neighbourhood (moves smoothly as the view turns)
+      const edge = (ux: number, uz: number) => { const t = Math.min(hw / Math.max(1e-6, Math.abs(ux)), hd / Math.max(1e-6, Math.abs(uz))); return toScreen(cx + ux * t, 0, cz + uz * t); };
+      const [nx, ny] = edge(dx, dz), [fx, fy] = edge(-dx, -dz), [ax, ay] = edge(dz, -dx), [bx, by] = edge(-dz, dx);
+      const spots: [number, number][] = [
+        [nx - lw / 2, ny + 8], [nx - lw * 0.95, ny + 8], [nx - lw * 0.05, ny + 8], // under the near side, centred / shifted
+        [fx - lw / 2, fy - 8 - lh], [fx - lw * 0.95, fy - 8 - lh], [fx - lw * 0.05, fy - 8 - lh], // above the far side
+        [Math.min(ax, bx) - lw - 10, (ay + by) / 2 - lh / 2], [Math.max(ax, bx) + 10, (ay + by) / 2 - lh / 2], // off either side
+      ];
+      let best = spots[0], bestO = Infinity;
+      for (const [x, y] of spots) { const o = overlap([x, y, x + lw, y + lh]); if (o < bestO) { best = [x, y]; bestO = o; } if (o === 0) break; }
+      // nowhere clear (crowded phone screens): hide it rather than cover a pin; tapping the neighbourhood still works
+      el.classList.toggle('crowded', bestO > 0);
+      if (bestO === 0) taken.push([best[0], best[1], best[0] + lw, best[1] + lh]);
+      el.style.transform = `translate(${(best[0] + lw / 2).toFixed(1)}px,${best[1].toFixed(1)}px)`; // .hlabel is centred on x by CSS
     }
     overlay.classList.toggle('near', viewH < 70);
   }
