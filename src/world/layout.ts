@@ -264,12 +264,55 @@ export function buildWorld(): World {
   W.building(39.1, 10.2, 2, 2, 3, '#c27a5c', { y0: ct, cornice: '#5b4f45' }); W.box(39.6, ct + 1.2, 12.2, 1, 1, 0.06, '#fff8ec');
   for (let i = 0; i < 6; i++) W.person(30.6 + i * 0.5, 27.8 - (i % 2) * 0.2);
   W.car('z', 8, 32, 27.4, 2, '#f2c230'); W.car('x', 26.6, 46, 15.2, 2, '#3f7fbf'); W.car('x', 46, 26.6, 26.2, 1.8, '#ece4d5');
-  W.boat('z', -60, 70, 17, 1.6); W.boat('z', 70, -60, -34, 1.4, '#ece4d5'); W.boat('x', -36, 20, 52, 1.2);
+  W.boat('z', -74, 70, 17, 1.6); W.boat('z', 70, -60, -34, 1.4, '#ece4d5'); W.boat('x', -36, 20, 52, 1.2);
 
   /* ---------- context Brooklyn (and Prospect Park) between DUMBO and Midwood ---------- */
   W.hood = null;
   W.context(22, 32, 68, 50, [2, 5], [[32, 38, 46, 50]]); W.park(32.4, 38.4, 13, 11.4); trees(W, 33, 39, 45, 49.4, 16);
   W.context(46, 6, 68, 32, [3, 6]);
+
+  /* ---------- the Greenpoint / North Williamsburg waterfront, north of DUMBO along the East River ---------- */
+  // piers stop at x 18, clear of the East River ferry lane (x 17)
+  const WATER = lam('#6fb7c4'); // the shared water material, so the creek follows the time of day
+  // Newtown Creek along the top edge, with the wastewater plant's silver "digester eggs" beside it
+  W.box(22, 0, -73.6, 26, 0.04, 3.4, WATER, false);
+  for (const z of [-73.8, -70.1]) W.box(22, 0, z, 26, 0.22, 0.25, '#b9b3aa');                       // bulkheads
+  W.slab(33, -68.6, 12, 7.4, '#cfc8bb', 0.1);
+  const eggs: [number, number][] = [[35.4, -66.4], [38.6, -66.4], [41.8, -66.4], [44.6, -66.4]];
+  for (const [x, z] of eggs) {
+    W.cyl(x, 0.1, z, 1.1, 1.1, 0.6, '#9aa3a8', 12);
+    W.add(at(new THREE.Mesh(new THREE.SphereGeometry(1.25, 18, 14), lam('#d4d9de')), x, 2.6, z)).scale.set(1, 1.75, 1);
+    W.cyl(x, 2.4, z, 1.3, 1.3, 0.12, '#8a9096', 16);                                                 // steel collar
+  }
+  W.box(35.2, 4.7, -66.6, 9.6, 0.18, 0.4, '#6b6f78');                                                 // the catwalk across the tops
+  W.building(36, -63.4, 6, 2, 2, '#c9b8a6', { fronts: ['S'], cornice: '#6b6f78' });                   // plant building
+  // Greenpoint Landing: new glass towers at the creek mouth
+  W.building(24.6, -67.6, 4, 4, 16, pick(GLASS), { glass: true }); W.building(29.2, -66.8, 3.4, 3.4, 12, pick(GLASS), { glass: true });
+  // the waterfront: lawn and a walkway along the river, Kent Ave behind
+  W.park(22, -62, 4.4, 66); W.slab(22.4, -62, 0.9, 66, '#e3dccf', 0.1); trees(W, 23.6, -61, 26, 3, 16);
+  W.road(26.4, -74, 2.6, 78); W.road(28.9, -40, 15, 2.2); W.road(28.9, -18, 15, 2.2);
+  W.car('z', -74, 4, 27.1, 2.2, '#f2c230'); W.car('z', 4, -74, 28.3, 2, '#3f7fbf');
+  // four piers into the river
+  const pier = (zc: number) => { W.box(18, -1, zc - 1.1, 4.2, 1.12, 2.2, '#c9a77c'); for (const x of [18.3, 21.6]) for (const dz of [-0.95, 0.95]) W.box(x, 0.12, zc + dz - 0.04, 0.08, 0.6, 0.08, '#4a4542'); };
+  pier(-56); W.lamp(19, -56.6); W.person(20.4, -55.6); W.person(19.6, -55.4);                          // Transmitter Park pier
+  W.box(36.4, 0, -59.2, 1.2, 0.08, 1.2, '#93c66c'); W.box(36.8, 0, -58.8, 0.3, 6, 0.3, '#b9583f');     // the old radio mast, in the park
+  pier(-44); W.box(18.4, 0.12, -44.9, 3.4, 1.4, 1.8, [lam('#9aa3a8'), lam('#9aa3a8'), lam('#6b6f78'), lam('#6b6f78'), lam('#9aa3a8'), lam('#9aa3a8')]); // pier shed
+  pier(-30); W.building(20.2, -30.8, 1.6, 1.6, 1, '#cfe2ee', { glass: true });                        // NYC Ferry stop
+  W.boat('x', 20, 20.01, -32, 0.001, '#f4efe3');                                                      // a ferry, moored alongside
+  pier(-14); for (const z of [-14.6, -13.4]) W.box(19.4, 0.12, z, 1.2, 0.35, 0.3, '#8a6a45');          // benches on the last one
+  W.person(20.8, -14.2); W.person(21.2, -13.7);
+  // behind Kent Ave: lofts and rowhouses, Bushwick Inlet Park, the old Domino sugar refinery
+  for (const [z, fl, c] of [[-61, 5, '#a9563f'], [-57.6, 4, '#9c5643'], [-54.4, 6, '#b5654a'], [-50.8, 5, '#8f4635'], [-47.4, 4, '#c27a5c']] as const)
+    W.building(29.6, z, 4.6, 3.2, fl, c, { fronts: ['W'], shop: rnd() < 0.5, tank: fl > 5 });
+  for (let z = -61; z < -44; z += 2.6) W.building(35.4, z, 2.4, 3, 3, pick(BROWN), { fronts: ['E'] });  // rowhouses on the next street
+  W.park(29.2, -37.6, 13, 18); W.slab(31, -35, 8, 5, '#7fb862', 0.1);                                 // Bushwick Inlet Park and its pitch
+  W.box(31.3, 0.1, -32.6, 7.4, 0.02, 0.08, '#fff6e6', false); W.box(34.96, 0.1, -34.7, 0.08, 0.02, 4.4, '#fff6e6', false);
+  trees(W, 30, -27, 41.5, -20.5, 9);
+  const dom = W.building(30, -14.6, 6.6, 5.6, 9, '#9d4b38', { fronts: ['W', 'S'], cornice: '#5b4f45' }); // the refinery
+  W.building(31.2, -13.4, 2.6, 2.6, 3, '#9d4b38', { y0: dom, cornice: '#5b4f45' });
+  W.cyl(35.6, 0, -12.6, 0.6, 0.45, 14, '#8f4635', 10);                                                // its smokestack
+  W.park(29.2, -8.2, 8.6, 11.6); trees(W, 30, -7.6, 37, 2.6, 6);                                       // Domino Park
+  W.building(38.6, -14.6, 4, 4, 14, pick(GLASS), { glass: true });                                    // a new tower behind it
   W.context(22, 50, 44, 76, [2, 4]);
 
   /* ---------- Midwood: Avenue J east-west, the B/Q in its cut, Di Fara at E 15th St ---------- */
