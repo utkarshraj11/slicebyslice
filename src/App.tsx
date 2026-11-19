@@ -17,7 +17,7 @@ export default function App() {
 
   // hash routing + keyboard
   useEffect(() => {
-    const timer = location.hash.length > 1 ? setTimeout(routeHash, 900) : undefined; // let the intro land first
+    if (location.hash.length > 1) routeHash(); // the map is already attached: child effects run before this one
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') back();
       if (getState().curPlace && (e.key === 'ArrowRight' || e.key === 'ArrowLeft')) stepPlace(e.key === 'ArrowRight' ? 1 : -1);
@@ -32,7 +32,7 @@ export default function App() {
     };
     window.addEventListener('hashchange', onHashChange);
     document.addEventListener('keydown', onKey);
-    return () => { clearTimeout(timer); window.removeEventListener('hashchange', onHashChange); document.removeEventListener('keydown', onKey); };
+    return () => { window.removeEventListener('hashchange', onHashChange); document.removeEventListener('keydown', onKey); };
   }, []);
 
   const cls = ['app', s.mode !== 'overview' && 'zoomed', s.curPlace && 'panel-open'].filter(Boolean).join(' ');

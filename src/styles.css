@@ -115,7 +115,7 @@ header p{margin:0;font-size:14.5px;line-height:1.45;color:#4d463f;max-width:340p
 .item .bd.empty{color:#c9beb0;font-size:15px}
 .item .rk{font-family:Fraunces,Georgia,serif;font-weight:800;width:22px;color:var(--tomato)}
 
-.hoodbar{position:fixed;left:50%;bottom:20px;transform:translate(-50%,140%);transition:transform .45s cubic-bezier(.2,.85,.2,1);display:flex;gap:8px;align-items:center;background:var(--card);border:1.5px solid var(--ink);border-radius:999px;padding:7px 8px 7px 16px;box-shadow:3px 3px 0 var(--ink);z-index:5;max-width:calc(100vw - 40px);overflow-x:auto;scrollbar-width:none}
+.hoodbar{position:fixed;left:50%;bottom:20px;transform:translate(-50%,calc(100% + 90px));transition:transform .45s cubic-bezier(.2,.85,.2,1);display:flex;gap:8px;align-items:center;background:var(--card);border:1.5px solid var(--ink);border-radius:999px;padding:7px 8px 7px 16px;box-shadow:3px 3px 0 var(--ink);z-index:5;max-width:calc(100vw - 40px);overflow-x:auto;scrollbar-width:none}
 .hoodbar::-webkit-scrollbar{display:none}
 .hoodbar.show{transform:translate(-50%,0)}
 .hoodbar b{font-family:Fraunces,Georgia,serif;font-size:16px;white-space:nowrap;margin-right:4px}
@@ -147,9 +147,4 @@ header p{margin:0;font-size:14.5px;line-height:1.45;color:#4d463f;max-width:340p
   .app.zoomed header .kicker{display:none}
   .app.zoomed header h1{font-size:22px}
 }
-/* walkers' legs swing from the hip */
-/* (two poses toggled by the animation loop: a CSS animation per leg costs ~12 fps) */
-.lg1,.lg2{transform-box:fill-box;transform-origin:50% 0;transform:rotate(-20deg)}
-.lg2,.st .lg1{transform:rotate(20deg)}
-.st .lg2{transform:rotate(-20deg)}
 @media (prefers-reduced-motion:reduce){.pin3 svg{transition:none}}

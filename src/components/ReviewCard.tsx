@@ -14,7 +14,7 @@ export function ReviewCard({ placeId }: { placeId: string | null }) {
 
   const open = !!placeId;
   return (
-    <aside ref={ref} className={'panel' + (open ? ' open' : '')} id="card" aria-hidden={!open}>
+    <aside ref={ref} className={'panel' + (open ? ' open' : '')} id="card" inert={!open}>
       <button className="x" aria-label="Close" onClick={() => closeCard()}>✕</button>
       {p && <Card p={p} />}
     </aside>

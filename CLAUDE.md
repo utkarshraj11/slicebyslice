@@ -2,22 +2,23 @@
 
 A personal pizza-review site. It shows a pixel-art, isometric 3D map of New York City and Hoboken, in the style of isometriccities.com's landmark dioramas: one connected little city on a floating diorama plate, Hoboken across the Hudson on the west, Manhattan in the middle, Brooklyn across the East River on the east. Each pizzeria the owner visited is a storefront with a pin. Clicking a pin opens a review card with a rating, a written review and two photos.
 
-It's a **Vite + React + TypeScript + three.js** app. (It started as a single SVG `index.html`, kept as `legacy.html`; the later SVG engine built from real tax-lot data lives on the `main` / `visual-refresh` branches.) The only outside resource is Google Fonts (Fraunces and DM Sans), and the page falls back to system fonts without it.
+It's a **Vite + React + TypeScript + three.js** app. (It started as a single SVG `index.html`, in git history. A later SVG engine built from real NYC tax-lot / OpenStreetMap data, with real street layouts, is kept on the `visual-refresh` branch; the three.js rewrite replaced it on `main` in Nov 2026.) The only outside resource is Google Fonts (Fraunces and DM Sans), and the page falls back to system fonts without it.
 
 ```bash
 pnpm install
-pnpm dev        # dev server
+pnpm dev        # dev server on https (vite-plugin-mkcert), also on the LAN IP for phones on the same Wi-Fi
 pnpm build      # typecheck + production build to dist/ (static, base './', host anywhere)
 pnpm typecheck
 ```
 
 ```
 index.html                 Vite entry (fonts + #root)
-src/data/places.ts         RATING_MAX, PLACES, HOODS, TOUR: the content
+src/data/places.ts         RATING_MAX, PLACES, HOODS, HOOD_ORDER: the content
 src/world/compass.ts       Dir, quarter-turn view rotation (thetaOf, visibleAt, rotShowing)
 src/world/kit.ts           class World: the builder (land, road, building, pizza, house, tree, car, boat…), pixel facade textures, seeded RNG
 src/world/layout.ts        buildWorld(): the whole map, hand-placed, one commented section per neighbourhood + landmarks
-src/world/map.ts           createMap(): renderer + pixel pass, lighting/time of day, camera framing and swings, input, DOM pins/labels, cutaway
+src/world/map.ts           createMap(): renderer + render passes, lighting/time of day, camera framing and swings, input, DOM pins/labels, cutaway
+src/world/sketch.ts        SketchPass: the "Sketch" render style (hand-drawn ink outlines, watercolour wash)
 src/store.ts               UI state + actions (openPlace, focusHood, list, rotation) + hash routing
 src/components/*.tsx       MapView, ReviewCard, ListPanel, HoodBar, Compass, Grain, icons
 src/styles.css             all CSS
@@ -25,7 +26,7 @@ public/photos/             put review photos here (empty for now)
 tools/preview.mjs          headless-Chrome screenshot/smoke-test script (Playwright, software WebGL)
 ```
 
-**React vs. engine split.** React renders only the chrome (header, buttons, card, list, hood bar) plus an empty `#map` host and `.overlay` div. `createMap()` (in a `MapView` effect) owns the canvas and puts the pins and neighbourhood labels into the overlay as real `<button>`s, re-projected every frame. State lives in `store.ts` (a tiny external store read with `useSyncExternalStore`), so the camera can read which panels are open synchronously when it refits. The map reports taps through callbacks, and the store calls `map.refit()`, `setActivePin()`, `setOverview()`, `setRotation()`; `MapView` calls `setTime()` and `zoomBy()`. `buildWorld()` reseeds the RNG, so builds are deterministic (and React StrictMode's double mount is harmless; `destroy()` disposes the renderer).
+**React vs. engine split.** React renders only the chrome (header, buttons, card, list, hood bar) plus an empty `#map` host and `.overlay` div. `createMap()` (in a `MapView` effect) owns the canvas and puts the pins and neighbourhood labels into the overlay as real `<button>`s, re-projected every frame. State lives in `store.ts` (a tiny external store read with `useSyncExternalStore`), so the camera can read which panels are open synchronously when it refits. The map reports taps through callbacks, and the store calls `map.refit()`, `setActivePin()`, `setOverview()`, `setRotation()` and `pan()` (arrow keys); `MapView` calls `setTime()`, `setStyle()` and `zoomBy()`. `buildWorld()` reseeds the RNG, so builds are deterministic (and React StrictMode's double mount is harmless; `destroy()` disposes the renderer).
 
 ---
 
@@ -35,13 +36,23 @@ tools/preview.mjs          headless-Chrome screenshot/smoke-test script (Playwri
 - Ratings are assumed to be **out of 10** (`RATING_MAX`). The owner hasn't confirmed this scale.
 - The owner said prices are hard to recall, so **prices were left out on purpose**.
 - A previous version is published as a claude.ai artifact. That copy won't update automatically. Host `dist/` anywhere static, such as GitHub Pages, Netlify or Vercel.
-- **Pixel-diorama rewrite (Nov 2026, branch `pixel-islands`)**, asked for by the owner after the SVG map "didn't look great": matching real scale was hurting the design, so the map is now hand-placed and shortened, with one or two famous landmarks per neighbourhood, but still one connected map in real geography ("hoboken to left of manhattan, dumbo and brooklyn to the right"). Each pizzeria stays on its real street and side (the owner's earlier asks still hold: Benny Tudino's across Washington St from Basile's, Panello on Monroe St, the riverfront behind Benny's, a basketball court across the road from Joe's).
+- **Pixel-diorama rewrite (Nov 2026, merged to `main`)**, asked for by the owner after the SVG map "didn't look great": matching real scale was hurting the design, so the map is now hand-placed and shortened, with one or two famous landmarks per neighbourhood, but still one connected map in real geography ("hoboken to left of manhattan, dumbo and brooklyn to the right"). Each pizzeria stays on its real street and side (the owner's earlier asks still hold: Benny Tudino's across Washington St from Basile's, Panello on Monroe St, the riverfront behind Benny's, a basketball court across the road from Joe's).
 - Landmarks: the Weehawken cliffs (the Palisades: a rock plateau north of Hoboken, its east face broken into basalt columns that you see when looking from the north-east; Boulevard East with houses on top; River Road, the riverside walkway and the Port Imperial ferry terminal below); Newport, Jersey City, south of the rail yards (glass towers along Washington Blvd, the mall and its parking lot, the Hudson River Waterfront Walkway with railing, lamps and benches, a marina; its docks stop clear of the Hudson ferry lane at x −34); the Lackawanna rail yards south of the Terminal (ten tracks, platforms under green canopies, signal gantries, parked NJ Transit-style trains, two trains shunting back and forth: movers with `bounce`); the Greenpoint / North Williamsburg waterfront north of DUMBO (Newtown Creek along the top edge and the wastewater plant's silver digester eggs, Greenpoint Landing towers, a riverside walkway and Kent Ave, four piers: Transmitter Park, a pier shed, a NYC Ferry stop with a moored ferry, benches; lofts and rowhouses, Bushwick Inlet Park, the old Domino refinery and smokestack, without its sign; piers stop at x 18, clear of the East River ferry lane at x 17); Hoboken Terminal and clock tower; Central Park, Columbus Circle, Hearst Tower, Port Authority, Times Square billboards (brand-free), the Empire State Building; Hudson River Park and Pier 45, Washington Square and its arch, the West 4th St courts; the Stock Exchange, Federal Hall, the Battery and Castle Clinton; the Brooklyn Bridge; Brooklyn Bridge Park and the carousel, the DUMBO clock tower building; Prospect Park; the B/Q cut and Avenue J station; the Statue of Liberty.
 - Brooklyn between DUMBO and Midwood is hand-placed with the same detailed buildings as the neighbourhoods (`fillBlock`), each area anchored by landmarks: Downtown Brooklyn (Borough Hall and its cupola, the tall dark tower, the savings bank clock tower with its gold dome, the rust-coloured arena), Brooklyn Heights / Prospect Heights brownstones, Prospect Park and its lake, Grand Army Plaza's arch and fountain, the library, Park Slope, and Green-Wood Cemetery (headstones, Gothic gate). The owner found the earlier pale `World.context` filler there "soulless". The land added to fill the rectangle (Jersey shore north and south of Hoboken, Greenpoint/LIC) is plain ground apart from hand-placed landmarks (the Weehawken cliffs, the Lackawanna yards, Newport, the Greenpoint waterfront): the owner found it "soulless" filled with repeated context blocks, so don't fill it that way again.
 - **Rotation** is free: drag left/right to turn (asked for by the owner, like Pocket City). The store still keeps the nearest quarter view (`state.rot`) for Q/E, the compass buttons and auto-rotating to a storefront, which swing smoothly to exact quarter views.
-- Known pre-existing quirk: on mobile the hidden, empty neighborhood bar peeks out as a small blob above the bottom buttons; the scale bar overlaps the header text in the phone overview.
+- Known pre-existing quirk: the scale bar overlaps the header text in the phone overview.
 - Performance: every hood building is its own mesh (a few hundred draw calls, rendered twice by the pixel pass, plus shadows). 60 fps on an Apple M5 GPU; not yet measured on a phone. If phones struggle, merge static buildings per neighbourhood (`mergeGeometries` from three's BufferGeometryUtils).
 
+
+### The owner's preferences (learned the hard way; follow them)
+
+- **Character over filler.** Repeated generic blocks read as "soulless": fill space with hand-placed landmarks and the detailed `fillBlock` buildings, or leave it as plain ground. Never bring back pale repeated filler.
+- **Design over scale.** Real geography and each pizzeria's real street and side matter; true distances and sizes don't. Shorten freely.
+- **Pocket City (april-zhu.com/pocketcity) and isometriccities.com are the visual references.** Match their techniques with our own models; never copy their images.
+- Pixel art at 3 CSS px per pixel was "too pixelated": keep `PIXEL_CSS` around 1.5.
+- Controls are **orbit style** (drag turns, click to travel), chosen over drag-to-pan.
+- Labels must never cover a pin. No guided tour. The card links to Google Maps.
+- The owner reviews visually: after any change to the map, screenshot it (see "Previewing and testing") and look before reporting it done.
 
 ## Editing content (the most common task)
 
@@ -116,7 +127,7 @@ Movers: `car(axis, a, b, c, speed, colour, {bus, y})` loops from a to b along `a
   - **Pixel** (default): `RenderPixelatedPass`, as above.
   - **Sketch** (`world/sketch.ts`, `SketchPass`), after Pocket City's illustrated look, which the owner asked for as an option: full resolution with 4× MSAA, ink outlines from a second render of normals + depth (depth jumps = silhouettes, normal changes = creases), wobbled by low-frequency noise and uneven in pressure so they read as hand-drawn, and colours a little more saturated, lightly washed toward the paper, with pigment grain. Ink and paper tones follow `TIMES` (`setTones`). Tuning knobs are the constants in the shader (edge thresholds, wobble 2.2 px, wash .1).
 - Light: hemisphere + one shadow-casting sun (`BasicShadowMap`, 2048², covers the whole plate). `TIMES` in map.ts: day / dusk / night set background, light colours, water colour, and how bright the lit windows and the glowing things are. The "Day / Dusk / Night" button calls `map.setTime(k)`.
-- Palette: cream paper `#f3efe5` around the plate, teal water, brick / brownstone / limestone / glass building palettes in kit.ts, tomato accent `#d9473a`. Keep new things blocky and low-poly: boxes, cylinders, prisms, icosahedron trees.
+- Palette: cream paper `#f3efe5` around the plate, teal water, brick / brownstone / limestone / glass building palettes in kit.ts, tomato accent `#d9473a`. Keep new things blocky and low-poly: boxes, cylinders, prisms, soft round tree clusters.
 - **Don't draw** real brand logos, copyrighted characters or copies of public artworks (no Charging Bull; Times Square billboards are abstract). Restaurant names on their own signs are fine. Don't copy isometriccities.com's images; match the technique, make our own models.
 
 ### Camera, input, overlay (`map.ts`)

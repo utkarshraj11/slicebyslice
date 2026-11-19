@@ -66,7 +66,7 @@ function temple(W: World, x0: number, z0: number, w: number, d: number, floors: 
 export function buildWorld(): World {
   reseed();
   const W = new World();
-  const hood = (id: HoodId, x0: number, z0: number, x1: number, z1: number, y1: number) => { W.hood = id; W.hoods[id] = { x0, z0, x1, z1, y1 }; W.pave(x0, z0, x1 - x0, z1 - z0); };
+  const hood = (id: HoodId, x0: number, z0: number, x1: number, z1: number, y1: number) => { W.hoods[id] = { x0, z0, x1, z1, y1 }; W.pave(x0, z0, x1 - x0, z1 - z0); };
 
   /* ---------- the plate: harbour water on a diorama base, then the three landmasses ---------- */
   // the plate is exactly the land's bounding rectangle (inset a hair so the land's cut faces win), so the rivers run off its edges
@@ -98,7 +98,6 @@ export function buildWorld(): World {
   trees(W, -75, -8, -73, 27, 5);
 
   /* ---------- the Weehawken cliffs: the Palisades rise behind the Jersey waterfront north of Hoboken ---------- */
-  W.hood = null;
   const ROCK = ['#7d6f63', '#8a7b6d', '#6e6258', '#94867a'], rock = () => lam(pick(ROCK)), cliffTop = lam('#a3cf78');
   const CH = 5.5; // cliff height
   W.box(-76, 0, -74, 20, CH, 58, [rock(), rock(), cliffTop, rock(), rock(), rock()]);            // the plateau (Weehawken / Union City)
@@ -184,7 +183,6 @@ export function buildWorld(): World {
   W.car('z', 46, 76, -49.4, 2, '#ece4d5'); W.car('z', 76, 46, -48.2, 2.2, '#f2c230'); W.car('x', -76, -44, 57.6, 1.8, '#3f7fbf');
 
   /* ---------- Central Park & Columbus Circle ---------- */
-  W.hood = null;
   W.park(-30, -74, 42, 12); W.slab(-12, -71, 9, 4, '#7fc3cf', 0.1); trees(W, -29, -73, 11, -62.5, 34);
   W.road(-30, -62, 42, 2);
 
@@ -213,7 +211,7 @@ export function buildWorld(): World {
   W.car('x', -30, 12, -40, 1.8, '#d9473a', { bus: true }); W.car('x', 12, -30, -38.9, 2.6, '#f2c230');
 
   /* ---------- West Village: Bleecker St north-south from Christopher to Carmine, 6th Ave and Washington Square to the east ---------- */
-  W.hood = null; W.road(-30, -24, 42, 2);                         // W 23rd St
+  W.road(-30, -24, 42, 2);                         // W 23rd St
   hood('village', -30, -22, 12, 12, 12);
   W.park(-30, -22, 4, 34); trees(W, -29.6, -21, -26.6, 11, 9);  // Hudson River Park
   W.box(-37, -1, -15, 7, 1.1, 3, '#c9a77c');                     // Pier 45
@@ -238,7 +236,7 @@ export function buildWorld(): World {
   for (let i = 0; i < 5; i++) W.person(-3.2 + i * 0.45, 3.9);
 
   /* ---------- Financial District: Wall St east-west from Broadway to the river ---------- */
-  W.hood = null; W.road(-26, 12, 38, 2.4);                        // Canal St
+  W.road(-26, 12, 38, 2.4);                        // Canal St
   hood('fidi', -26, 14.4, 12, 40, 26);
   W.road(-22, 14.4, 3, 25.6); W.road(-13, 14.4, 2.2, 25.6); W.road(-4, 14.4, 2.2, 25.6);
   W.road(-26, 28, 38, 2.4); W.road(-26, 21, 24.2, 2.2); W.road(-22, 35, 34, 2);
@@ -252,7 +250,6 @@ export function buildWorld(): World {
   W.car('x', -26, 12, 28.6, 2, '#f2c230'); W.car('x', 12, -26, 29.8, 2.2, '#ece4d5'); W.car('z', 14.4, 40, -21.2, 2.4, '#3f7fbf');
 
   /* ---------- the Brooklyn Bridge: stone towers in the river, deck and cables from FiDi to DUMBO ---------- */
-  W.hood = null;
   const ST = '#cdb99a';
   W.box(2, 0, 19.6, 6, 5, 4.4, ST); W.box(30, 0, 19.6, 5, 5, 4.4, ST);           // anchorages
   W.box(5, 4.5, 20.6, 28, 0.5, 2.4, '#8a7f74');                                    // deck
@@ -293,7 +290,6 @@ export function buildWorld(): World {
   W.boat('z', -74, 70, 17, 1.6); W.boat('z', 70, -60, -34, 1.4, '#ece4d5'); W.boat('x', -36, 20, 52, 1.2);
 
   /* ---------- context Brooklyn (and Prospect Park) between DUMBO and Midwood ---------- */
-  W.hood = null;
   /* ---------- Downtown Brooklyn (east of DUMBO): Borough Hall, the tall dark tower, the savings bank clock tower, the arena ---------- */
   W.road(46, 6, 2.4, 44); W.road(56, 6, 2.4, 44);                                                      // Adams St / Flatbush Ave
   W.road(46, 14, 22, 2.4); W.road(46, 23, 22, 2.4); W.road(22, 32, 46, 2.4);                           // Fulton St, Livingston St, Atlantic Ave
@@ -354,7 +350,7 @@ export function buildWorld(): World {
   W.box(36.4, 0, -59.2, 1.2, 0.08, 1.2, '#93c66c'); W.box(36.8, 0, -58.8, 0.3, 6, 0.3, '#b9583f');     // the old radio mast, in the park
   pier(-44); W.box(18.4, 0.12, -44.9, 3.4, 1.4, 1.8, [lam('#9aa3a8'), lam('#9aa3a8'), lam('#6b6f78'), lam('#6b6f78'), lam('#9aa3a8'), lam('#9aa3a8')]); // pier shed
   pier(-30); W.building(20.2, -30.8, 1.6, 1.6, 1, '#cfe2ee', { glass: true });                        // NYC Ferry stop
-  W.boat('x', 20, 20.01, -32, 0.001, '#f4efe3');                                                      // a ferry, moored alongside
+  W.boat('x', 20, 20, -32, 0, '#f4efe3');                                                              // a ferry, moored alongside
   pier(-14); for (const z of [-14.6, -13.4]) W.box(19.4, 0.12, z, 1.2, 0.35, 0.3, '#8a6a45');          // benches on the last one
   W.person(20.8, -14.2); W.person(21.2, -13.7);
   // behind Kent Ave: lofts and rowhouses, Bushwick Inlet Park, the old Domino sugar refinery
@@ -403,7 +399,6 @@ export function buildWorld(): World {
   for (let i = 0; i < 3; i++) W.person(55.6 + i * 0.5, 62.4);
 
   /* ---------- Liberty Island ---------- */
-  W.hood = null;
   W.cyl(-19, 0, 61, 3.4, 3.4, 1, '#d9cdb8', 8); W.box(-20, 1, 60, 2, 3, 2, '#cfc3ad');
   W.cyl(-19, 4, 61, 0.75, 0.45, 3.2, '#7fbfa8', 8); W.cyl(-19, 7.2, 61, 0.4, 0.35, 0.7, '#7fbfa8', 8);
   W.box(-18.7, 6.4, 60.8, 0.25, 2, 0.25, '#7fbfa8');

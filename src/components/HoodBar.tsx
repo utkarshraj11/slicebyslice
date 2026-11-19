@@ -8,7 +8,7 @@ export function HoodBar({ hood, curPlace }: { hood: HoodId | null; curPlace: str
   if (hood) last.current = hood;
   const id = last.current;
   return (
-    <div className={'hoodbar' + (hood ? ' show' : '')} id="hoodbar">
+    <div className={'hoodbar' + (hood ? ' show' : '')} id="hoodbar" inert={!hood}>
       {id && <>
         <b>{HOODS[id].name}</b>
         {PLACES.filter(p => p.hood === id).map(p => (

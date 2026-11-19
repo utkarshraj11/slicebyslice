@@ -6,7 +6,7 @@ import type { HoodId } from '../data/places';
 import type { Dir } from './compass';
 
 export interface Bounds { x0: number; z0: number; x1: number; z1: number; y1: number }
-export interface Pin { pos: THREE.Vector3; facing: Dir; hood: HoodId; box: Bounds }
+export interface Pin { pos: THREE.Vector3; facing: Dir; box: Bounds }
 /** Loops from a to b (or, with `bounce`, goes back and forth between them). */
 export interface Mover { obj: THREE.Object3D; axis: 'x' | 'z'; a: number; b: number; speed: number; bounce?: boolean }
 
@@ -70,7 +70,7 @@ function faceFrame(x0: number, z0: number, w: number, d: number, f: Dir) {
   }
 }
 
-export interface BldOpts { fronts?: Dir[]; shop?: boolean; glass?: boolean; tank?: boolean; roof?: string; cornice?: string | null; y0?: number; dim?: boolean }
+export interface BldOpts { fronts?: Dir[]; shop?: boolean; glass?: boolean; tank?: boolean; roof?: string; cornice?: string | null; y0?: number }
 
 export class World {
   root = new THREE.Group();
@@ -81,11 +81,8 @@ export class World {
   pins: Record<string, Pin> = {};
   hoods: Partial<Record<HoodId, Bounds>> = {};
   movers: Mover[] = [];
-  /** all land (for picking) */
-  ground: THREE.Object3D[] = [];
   private crowns: [number, number, number, number, THREE.Color][] = [];
   private trunks: [number, number, number, number][] = [];
-  hood: HoodId | null = null;
 
   add<T extends THREE.Object3D>(o: T, shadow = true): T {
     o.traverse(m => { if ((m as THREE.Mesh).isMesh) { m.castShadow = shadow; m.receiveShadow = true; } });
@@ -113,8 +110,7 @@ export class World {
 
   /* ---------- ground ---------- */
   land(x0: number, z0: number, w: number, d: number) {
-    const m = this.box(x0, -5, z0, w, 5, d, [lam('#b98f5f'), lam('#b98f5f'), lam('#a3cf78'), lam('#8a6a45'), lam('#c9a272'), lam('#c9a272')], false);
-    this.ground.push(m); return m;
+    return this.box(x0, -5, z0, w, 5, d, [lam('#b98f5f'), lam('#b98f5f'), lam('#a3cf78'), lam('#8a6a45'), lam('#c9a272'), lam('#c9a272')], false);
   }
   slab(x0: number, z0: number, w: number, d: number, c: string, top = 0.06) { return this.box(x0, 0, z0, w, top, d, c, false); }
   pave(x0: number, z0: number, w: number, d: number) { return this.slab(x0, z0, w, d, '#e3dccf', 0.05); }
@@ -194,7 +190,7 @@ export class World {
     this.storefront(x0, z0, w, d, front, o.awn ?? pick(AWN), o.sign);
     // tag the building so a click on it (not just the pin) opens the review
     for (const c of this.root.children.slice(n0)) c.traverse(m => (m.userData.place = id));
-    this.pins[id] = { pos: new THREE.Vector3(x0 + w / 2, top + 0.6, z0 + d / 2), facing: front, hood: this.hood!, box: { x0, z0, x1: x0 + w, z1: z0 + d, y1: top } };
+    this.pins[id] = { pos: new THREE.Vector3(x0 + w / 2, top + 0.6, z0 + d / 2), facing: front, box: { x0, z0, x1: x0 + w, z1: z0 + d, y1: top } };
   }
 
   /* ---------- small things ---------- */

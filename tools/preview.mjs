@@ -64,7 +64,17 @@ await pg.waitForTimeout(2800);
 await pg.screenshot({ path: join(out, `${tag}overview.png`) });
 for (const h of a.hood ? [a.hood] : HOODS) await go(h, h);
 if (a.place) await go(a.place, `card_${a.place}`);
+if (a.place && !(await pg.$('#card.open'))) errs.push(`FAIL: #${a.place} did not open the review card`);
 
+// regression check: after a small drag, the compass must straighten the view again
+if (!a.mobile) {
+  await pg.evaluate(() => { location.hash = ''; }); await pg.click('.compass .dial'); await pg.waitForTimeout(1500);
+  const north = () => pg.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--north'));
+  const n0 = await north();
+  await pg.mouse.move(700, 500); await pg.mouse.down(); for (let i = 1; i <= 10; i++) await pg.mouse.move(700 + i * 6, 500); await pg.mouse.up();
+  await pg.click('.compass .dial'); await pg.waitForTimeout(1500);
+  if ((await north()) !== n0) errs.push(`FAIL: compass reset left the view at ${await north()}, expected ${n0}`);
+}
 const fps = await pg.evaluate(() => new Promise(r => { let n = 0; const t0 = performance.now();
   (function f() { n++; if (performance.now() - t0 < 2000) requestAnimationFrame(f); else r(n / 2); })(); }));
 console.log(`screenshots -> ${out}`);
@@ -73,3 +83,5 @@ console.log(errs.length ? 'errors:' : 'no console errors');
 for (const e of errs) console.log('  ' + e);
 await b.close();
 server?.close();
+// warnings (e.g. the ReadPixels stalls from screenshots) are noise; page errors and failed checks are not
+if (errs.some(e => /^(PAGEERROR|error:|FAIL)/.test(e))) process.exit(1);
