@@ -15,7 +15,7 @@ pnpm typecheck
 index.html                 Vite entry (fonts + #root)
 src/data/places.ts         RATING_MAX, PLACES, HOODS, TOUR: the content
 src/world/compass.ts       Dir, quarter-turn view rotation (thetaOf, visibleAt, rotShowing)
-src/world/kit.ts           class World: the builder (land, road, building, pizza, house, tree, car, boat, context…), pixel facade textures, seeded RNG
+src/world/kit.ts           class World: the builder (land, road, building, pizza, house, tree, car, boat…), pixel facade textures, seeded RNG
 src/world/layout.ts        buildWorld(): the whole map, hand-placed, one commented section per neighbourhood + landmarks
 src/world/map.ts           createMap(): renderer + pixel pass, lighting/time of day, camera framing and swings, input, DOM pins/labels, cutaway
 src/store.ts               UI state + actions (openPlace, focusHood, list, rotation) + hash routing
