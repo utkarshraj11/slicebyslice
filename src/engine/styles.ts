@@ -7,7 +7,7 @@
    Each facade's repeated parts are batched into a handful of <path>s, so a building costs
    about the same number of SVG elements however many windows it has. */
 import type { Lot } from '../data/lots';
-import { type Face, type Pt, type Dir, C_WIN, rnd, iso, f1, poly, ln, dk, lt, mixc, box, face, viewSide, frect, ftext, gableRoof } from './iso';
+import { type Face, type Pt, type Dir, C_WIN, edge, rnd, iso, f1, poly, ln, dk, lt, mixc, box, face, viewSide, frect, ftext, gableRoof } from './iso';
 import { type BldOpts, storefront, fireEscape, waterTower } from './parts';
 
 export type Style = 'rowhouse' | 'tenement' | 'loft' | 'prewar' | 'modern' | 'frame';
@@ -57,7 +57,7 @@ const SPECS: Record<Style, Spec> = {
   },
   // Walk-up tenement, 1880–1920: brick, tight bays, hooded lintels, pressed-metal bracketed cornice, fire escape
   tenement: {
-    bay: 0.5, ww: 0.26, wh: 0.5, lintel: 'hood', cornice: 'bracketed', fh: 0.88,
+    bay: 0.64, ww: 0.28, wh: 0.5, lintel: 'hood', cornice: 'bracketed', fh: 0.88,
     body: ['#b5654a', '#9c5643', '#c27a5c', '#8e5a47', '#d2b48c', '#c9a27e', '#a86b4f', '#ddc9a8'],
     trim: ['#ebe1cf', '#ddd0b8', '#f1ebe0'], corniceC: ['#4d433d', '#3f4b45', '#e6dccb', '#6b5446', '#8a8f86'],
   },
@@ -69,7 +69,7 @@ const SPECS: Record<Style, Spec> = {
   },
   // Prewar elevator building / office, 1900–1940: limestone base, buff brick shaft, paired windows, heavy cornice
   prewar: {
-    bay: 0.46, ww: 0.24, wh: 0.46, lintel: 'flat', cornice: 'heavy', fh: 0.85,
+    bay: 0.6, ww: 0.26, wh: 0.46, lintel: 'flat', cornice: 'heavy', fh: 0.85,
     body: ['#d7c19b', '#cdb48c', '#c9a98a', '#b9876a', '#e0cfae', '#cfc6b6'],
     trim: ['#efe8da', '#e6dfd0'], corniceC: ['#e6dfd0', '#d8cfbd'],
   },
@@ -89,7 +89,8 @@ const SPECS: Record<Style, Spec> = {
 const SHOP = ['#2f4a3a', '#7a2e2a', '#2f3a48', '#5b3d2e', '#c8423a', '#3f5a7a', '#e6dccb'];
 const AWN: string[][] = [['#2f6b4f', '#f4efe3'], ['#c8423a', '#f6efe2'], ['#2f3a48', '#f2c230'], ['#5a6e7a', '#f4efe3'], ['#7a2e2a', '#efe1c8']];
 const ROOFS = ['#b9583f', '#5a6e7a', '#8a4f3a', '#6b625a', '#7a5a4a'];
-const ROOF = '#d3cec4';
+/** Flat roofs: tar, gravel, silver coat, pale membrane. */
+const FLAT_ROOFS = ['#d3cec4', '#c4bdb2', '#aaa49c', '#dcd2c0', '#b9b3c0'];
 /** Faded painted ads on exposed brick walls: generic trades, no brands. */
 const GHOSTS = [['FIREPROOF', 'STORAGE'], ['PIANOS', '& ORGANS'], ['FURNITURE', 'WAREHOUSE'], ['TAILOR', 'ALTERATIONS'], ['BAKERY', 'EST. 1899']];
 
@@ -161,7 +162,7 @@ export function fromLot(l: Lot, o: LotOpts = {}): Built {
 const P = (p: Pt) => f1(p[0]) + ' ' + f1(p[1]);
 const quad = (F: Face, u0: number, v0: number, u1: number, v1: number) => `M${P(F.at(u0, v0))}L${P(F.at(u1, v0))}L${P(F.at(u1, v1))}L${P(F.at(u0, v1))}Z`;
 const shape = (pts: Pt[]) => 'M' + pts.map(P).join('L') + 'Z';
-const path = (d: string, fill: string, ex = '') => (d ? `<path d="${d}" fill="${fill}"${ex ? ' ' + ex : ''}/>` : '');
+const path = (d: string, fill: string, ex = '') => (d ? `<path d="${d}" fill="${fill}"${edge(fill, ex)}${ex ? ' ' + ex : ''}/>` : '');
 
 /** Arched window outline (rectangle with a half-round top) on a face. */
 function archPts(F: Face, uc: number, vb: number, ww: number, vt: number): Pt[] {
@@ -226,9 +227,8 @@ function facade(F: Face, sp: Spec, a: FacadeArgs) {
 
   s += path(shut, style === 'frame' ? pal(['#2f3d36', '#3f5a7a', '#7a2e2a'], key) : '#2f3d36', 'stroke-width=".35"');
   s += path(tr, trim, 'stroke-width=".4"');
-  s += path(glass, C_WIN, 'stroke-width=".5"');
-  s += path(lit, '#f6e2a0', 'stroke-width=".5"');
-  s += sash ? `<path d="${sash}" fill="none" stroke-width=".35"/>` : '';
+  s += path(glass, C_WIN, 'stroke="none"'); // windows read as flat panes: outlining every one turned facades into hatching
+  s += path(lit, '#f6e2a0', 'stroke="none"');
   s += dark ? `<path d="${dark}" fill="none" stroke="${dk(style === 'frame' ? a.c : trim, 0.1)}" stroke-width=".45"/>` : '';
 
   // ground floor on the street side
@@ -314,7 +314,7 @@ export function styledBld(x: number, y: number, w: number, d: number, h: number,
   const trim = o.trim ?? pal(sp.trim, key), cc = o.corniceC ?? (o.style === 'rowhouse' ? trim : pal(sp.corniceC, key, 1));
   const party = dk(c, 0.07);
   const Ld = DIRS.find(dd => viewSide(dd) === 'L')!, Rd = DIRS.find(dd => viewSide(dd) === 'R')!;
-  let s = box(bx, by, z0, bw, bd, hb, c, { top: o.roof || (o.style === 'modern' ? lt(c, 0.3) : ROOF), L: windowed(Ld) ? c : party, R: dk(windowed(Rd) ? c : party, 0.13) });
+  let s = box(bx, by, z0, bw, bd, hb, c, { top: o.roof || (o.style === 'modern' ? lt(c, 0.3) : pal(FLAT_ROOFS, key)), L: windowed(Ld) ? c : party, R: dk(windowed(Rd) ? c : party, 0.13) });
   const F = (dd: Dir) => face(bx, by, z0, bw, bd, dd);
   const args = { h: hb, c, g0, fh, nf, trim, cc, ground: o.ground ?? 'door', style: o.style };
   for (const dd of DIRS) {
@@ -376,13 +376,17 @@ export function styledBld(x: number, y: number, w: number, d: number, h: number,
     }
   } else if (o.style !== 'modern') {
     const bxx = bx + bw * backX - (backX > 0.5 ? 0.6 : 0), byy = by + bd * backY - (backY > 0.5 ? 0.55 : 0);
-    if (nf >= 3 && bw > 1.3 && bd > 1.3) {
+    if (nf >= 4 && bw > 1.3 && bd > 1.3) {
       s += box(bxx, byy, z0 + h, 0.6, 0.55, 0.5, dk(c, 0.04), { top: '#bdb7ab' }); // stair bulkhead
       s += frect(face(bxx, byy, z0 + h, 0.6, 0.55, fronts[0]), 0.18, 0, 0.42, 0.4, '#5b3d2e', 'stroke-width=".5"');
     }
-    if (o.style !== 'rowhouse' && bw > 1.6 && bd > 1.6) {
+    if (o.style !== 'rowhouse' && bw > 1.6 && bd > 1.6 && hash(key) % 2) {
       const sx = bx + bw * (1 - backX) - 0.25, sy = by + bd * (1 - backY) - 0.2;
       s += poly([iso(sx, sy, z0 + h + 0.01), iso(sx + 0.5, sy, z0 + h + 0.01), iso(sx + 0.5, sy + 0.4, z0 + h + 0.01), iso(sx, sy + 0.4, z0 + h + 0.01)], '#bcd6e4', 'stroke-width=".5"'); // skylight
+    }
+    if (bw > 2 && bd > 2 && hash(key + 'g') % 6 === 0) { // the odd roof garden
+      const gx = bx + bw * 0.15, gy = by + bd * 0.15, gw = bw * 0.45, gd = bd * 0.45, z = z0 + h + 0.02;
+      s += poly([iso(gx, gy, z), iso(gx + gw, gy, z), iso(gx + gw, gy + gd, z), iso(gx, gy + gd, z)], '#9fc874');
     }
     if (o.style === 'rowhouse' || o.style === 'tenement') { // chimneys on the party walls
       const alongX = street === 'W' || street === 'E';

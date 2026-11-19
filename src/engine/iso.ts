@@ -10,7 +10,7 @@ export type Dir = 'N' | 'E' | 'S' | 'W';
 
 export const S = 22, CX = Math.cos(Math.PI / 6), HY = 0.5;
 export const INK = '#2e2b29';
-export const C_TILE = '#f1ece2', C_ROAD = '#d8d0c2', C_LINE = '#e8bb4f', C_GRASS = '#b6d98f', C_WATER = '#94d0cd', C_WIN = '#cfe2ee', C_STONE = '#cdb99a';
+export const C_TILE = '#f1ece2', C_ROAD = '#bfb8ad', C_LINE = '#e8bb4f', C_GRASS = '#a3d07a', C_WATER = '#94d0cd', C_WIN = '#cfe2ee', C_STONE = '#cdb99a';
 export const TREES = ['#8fc36a', '#a5cf6c', '#7fb862', '#b3d575', '#98c96f'];
 export const SHIRTS = ['#d94a3a', '#3f7fbf', '#f2c230', '#5aa469', '#8e6cc2', '#f08a4b', '#2f3a48', '#ece4d5', '#e07aa0', '#58b5c9', '#c0392b', '#ffffff'];
 export const PANTS = ['#2f3a48', '#3d4f7a', '#5a4636', '#6b6f78', '#22303c', '#7a8a9a'];
@@ -72,7 +72,9 @@ export const iso = (x: number, y: number, z = 0): Pt => { const [a, b] = rot(x, 
 
 export const f1 = (n: number) => Math.round(n * 10) / 10;
 export const pts = (a: Pt[]) => a.map(p => f1(p[0]) + ',' + f1(p[1])).join(' ');
-export const poly = (a: Pt[], fill: string, ex = '') => `<polygon points="${pts(a)}" fill="${fill}"${ex ? ' ' + ex : ''}/>`;
+/** Stroke in a deep shade of the fill (soft, coloured outlines) unless `ex` sets its own. */
+export const edge = (fill: string, ex = '') => (ex.includes('stroke=') || fill[0] !== '#' ? '' : ` stroke="${dk(fill, 0.45)}"`);
+export const poly = (a: Pt[], fill: string, ex = '') => `<polygon points="${pts(a)}" fill="${fill}"${edge(fill, ex)}${ex ? ' ' + ex : ''}/>`;
 export const ln = (a: Pt, b: Pt, stroke = INK, w = 0.8, ex = '') =>
   `<line x1="${f1(a[0])}" y1="${f1(a[1])}" x2="${f1(b[0])}" y2="${f1(b[1])}" stroke="${stroke}" stroke-width="${w}"${ex ? ' ' + ex : ''}/>`;
 export const esc = (s: unknown) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');

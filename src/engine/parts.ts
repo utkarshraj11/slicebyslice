@@ -9,7 +9,7 @@ export function windowsSVG(F: Face, cols: number, rows: number, v0: number, v1: 
   let s = ''; const du = F.L / cols, dv = (v1 - v0) / rows; ww = Math.min(ww, du - 0.18);
   for (let i = 0; i < cols; i++) for (let j = 0; j < rows; j++) {
     const uc = du * (i + 0.5), vc = v0 + dv * (j + 0.5);
-    s += frect(F, uc - ww / 2, vc - wh / 2, uc + ww / 2, vc + wh / 2, rnd() < litP ? '#f6e2a0' : c, 'stroke-width=".55"');
+    s += frect(F, uc - ww / 2, vc - wh / 2, uc + ww / 2, vc + wh / 2, rnd() < litP ? '#f6e2a0' : c, 'stroke="none"');
   }
   return s;
 }
@@ -138,14 +138,14 @@ const CROWN = [[-0.5, 0.18, 0.46, 0.2], [0.5, 0.22, 0.44, 0.16], [0, 0.34, 0.48,
 const CROWN_S = [[-0.42, 0.12, 0.52, 0.16], [0.42, 0.16, 0.5, 0.1], [0, -0.4, 0.56, 0]];
 export function treeSVG(x: number, y: number, s = 1, c?: string) {
   c = c || pick(TREES);
-  const b = iso(x, y, 0), t = iso(x, y, 1.1 * s), R = 0.6 * S * s, o = dk(c, 0.42);
+  const b = iso(x, y, 0), t = iso(x, y, 1.1 * s), R = 0.75 * S * s, o = dk(c, 0.42);
   let out = `<ellipse cx="${f1(b[0])}" cy="${f1(b[1])}" rx="${f1(R * 0.95)}" ry="${f1(R * 0.45)}" fill="rgba(70,55,30,.13)" stroke="none"/>` +
     ln(b, [t[0], t[1] + R * 0.3], '#7a5236', 2.4 * s);
   // clusters batched into a back (darker) and a front path, plus one highlight path: ~5 elements a tree,
   // which matters with ~400 street trees (each element is repainted every frame)
   const circ = (x: number, y: number, r: number) => `M${f1(x - r)} ${f1(y)}a${f1(r)} ${f1(r)} 0 1 0 ${f1(2 * r)} 0a${f1(r)} ${f1(r)} 0 1 0 ${f1(-2 * r)} 0`;
   let back = '', front = '', hi = '';
-  const crown = s < 0.7 ? CROWN_S : CROWN;
+  const crown = s < 0.6 ? CROWN_S : CROWN;
   for (const [dx, dy, r, k] of crown) {
     const cx = t[0] + (dx + rr(-0.06, 0.06)) * R, cy = t[1] + (dy + rr(-0.05, 0.05)) * R;
     if (k > 0.05) back += circ(cx, cy, r * R); else front += circ(cx, cy, r * R);
