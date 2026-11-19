@@ -323,6 +323,7 @@ export function createMap(host: HTMLDivElement, overlay: HTMLDivElement, cb: Map
   el.addEventListener('pointerdown', onDown); el.addEventListener('pointermove', onMove);
   el.addEventListener('pointerup', onUp); el.addEventListener('pointercancel', onUp);
   el.addEventListener('wheel', onWheel, { passive: false }); el.addEventListener('contextmenu', onCtx);
+  overlay.addEventListener('wheel', onWheel, { passive: false }); // scrolling over a pin or label still zooms the map
   addEventListener('resize', onResize);
 
   /* ---------- loop ---------- */
@@ -368,7 +369,7 @@ export function createMap(host: HTMLDivElement, overlay: HTMLDivElement, cb: Map
       renderer.setAnimationLoop(null);
       el.removeEventListener('pointerdown', onDown); el.removeEventListener('pointermove', onMove);
       el.removeEventListener('pointerup', onUp); el.removeEventListener('pointercancel', onUp);
-      el.removeEventListener('wheel', onWheel); el.removeEventListener('contextmenu', onCtx);
+      el.removeEventListener('wheel', onWheel); el.removeEventListener('contextmenu', onCtx); overlay.removeEventListener('wheel', onWheel);
       removeEventListener('resize', onResize);
       composer.dispose(); sketchPass.dispose(); renderer.dispose(); el.remove(); overlay.innerHTML = '';
     },
