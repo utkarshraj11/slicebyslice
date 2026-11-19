@@ -32,8 +32,8 @@ export function buildDumbo(): Tile {
   t.pizza('ignazios',7.4,6.9,2.8,2.8,3.4,'#e8dcc4',{front:'L',sign:"IGNAZIO'S",awn:['#2f6b4f','#f4efe3'],signBg:'#2f6b4f',signFg:'#f4efe3'});
   // warehouses
   t.grass(6.6,.6,2.0,5.4); t.tree(7.1,1.3,.9); t.tree(8.1,2.9,.8); t.tree(7.2,4.6,.9); t.bench(8.2,4.4,'y'); t.crowd(6.8,2.2,1.6,1.8,2);
-  t.b(8.9,.5,3.3,5.6,5.8,'#b8664f',{tower:true,tu:.6,fh:1.2,extraFaces:(FL)=>ftext(FL,1.65,5.05,'EST. 1898',7,'#f3e6d0',{ls:1.5})});
-  t.b(12.4,.5,3.3,5.6,6.6,'#9b5a48',{fh:1.2});
+  t.b(8.9,.5,3.3,5.6,5.8,'#b8664f',{style:'loft',floors:5,g0:1.2,fh:1.1,fronts:'LR',ground:'door',key:'dumbo-a',tower:true,tu:.6,extraFaces:(FL)=>ftext(FL,1.65,5.58,'EST. 1898',5.5,'#f3e6d0',{ls:1.5})});
+  t.b(12.4,.5,3.3,5.6,6.6,'#9b5a48',{style:'loft',floors:6,g0:1.2,fh:1.06,fronts:'LR',ground:'door',key:'dumbo-b'});
   t.b(10.4,6.9,5.4,2.8,4.2,'#c98a62',{g0:2.75,extraFaces:(FL)=>storefront(FL,.15,2.65,{sign:'BOOKS',awn:['#5a6e7a','#f4efe3'],wall:'#c98a62'})+storefront(FL,2.75,5.25,{sign:'COFFEE',awn:['#f2c230','#2f3a48'],signBg:'#2f3a48',signFg:'#f2c230',wall:'#c98a62'})});
   // carousel pavilion
   {const X=t.X(9.6),Y=t.Y(12.7),w=3.0,d=2.2;

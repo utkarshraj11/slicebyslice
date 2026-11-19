@@ -6,6 +6,12 @@ import {
   bld, houseSVG, treeSVG, lampSVG, benchSVG, hydrantSVG, personSVG, carSVG, storefront,
 } from './parts';
 import type { Face } from './iso';
+import type { Lot } from '../data/lots';
+import { type LotOpts, styledBld, fromLot, frontage } from './styles';
+
+/** bld() or, when opts.style is set, the styled renderer. */
+const build = (x: number, y: number, w: number, d: number, h: number, c: string, o: BldOpts) =>
+  o.style ? styledBld(x, y, w, d, h, c, { ...o, style: o.style }) : bld(x, y, w, d, h, c, o);
 
 /** Anything with a world-space footprint used for depth sorting. */
 export interface AABB { x0: number; y0: number; x1: number; y1: number; above?: boolean; behindAll?: boolean; onTop?: boolean }
@@ -18,6 +24,17 @@ export interface Mover extends AABB {
 export interface PizzaOpts extends StorefrontOpts {
   front?: 'L' | 'R' | 'LR'; u0?: number; u1?: number; faces?: (FL: Face, FR: Face) => string; b?: BldOpts;
 }
+/** One real building in a row(). */
+export interface RowItem extends LotOpts {
+  lot: Lot;
+  /** make this lot a pizzeria storefront */
+  pizza?: PizzaOpts & { id: string };
+  /** extra drawing on the building's faces (signs, painted ads…) */
+  faces?: (FL: Face, FR: Face) => string;
+  depth?: number;
+}
+/** Where a row() put each building (local coords). */
+export interface Placed { x: number; y: number; w: number; d: number; h: number; lot: Lot }
 
 export class Tile {
   gnd: string[] = [];
@@ -77,7 +94,7 @@ export class Tile {
   }
 
   /* objects (depth-sorted) */
-  b(x: number, y: number, w: number, d: number, h: number, c: string, o: BldOpts = {}) { this.add(x, y, x + w, y + d, bld(this.X(x), this.Y(y), w, d, h, c, o)); }
+  b(x: number, y: number, w: number, d: number, h: number, c: string, o: BldOpts = {}) { this.add(x, y, x + w, y + d, build(this.X(x), this.Y(y), w, d, h, c, o)); }
   house(x: number, y: number, w: number, d: number, h: number, c: string, rc: string) { this.add(x, y, x + w, y + d, houseSVG(this.X(x), this.Y(y), w, d, h, c, rc)); }
   tree(x: number, y: number, s = 1) { this.add(x - 0.15, y - 0.15, x + 0.15, y + 0.15, treeSVG(this.X(x), this.Y(y), s)); }
   lamp(x: number, y: number) { this.add(x - 0.05, y - 0.05, x + 0.05, y + 0.05, lampSVG(this.X(x), this.Y(y))); }
@@ -122,13 +139,47 @@ export class Tile {
     const X = this.X(x), Y = this.Y(y);
     const fronts = o.front || 'L';
     const sf = (F: Face, len: number) => storefront(F, o.u0 ?? 0.12, o.u1 ?? len - 0.12, { wall: c, ...o });
-    const s = bld(X, Y, w, d, h, c, {
+    const s = build(X, Y, w, d, h, c, {
       g0: 2.75, noWinL: fronts.includes('L') && h < 4, noWinR: fronts.includes('R') && h < 4,
       extraFaces: (FL, FR) => (fronts.includes('L') ? sf(FL, w) : '') + (fronts.includes('R') ? sf(FR, d) : '') + (o.faces ? o.faces(FL, FR) : ''),
       ...o.b,
     });
     this.add(x, y, x + w, y + d, s);
     this.pins[id] = [X + w / 2, Y + d / 2, h + (o.b?.tower ? 1.7 : 0.35)];
+  }
+
+  /** A real building from tax-lot data, at an explicit footprint. Returns its height. */
+  lot(l: Lot, x: number, y: number, w: number, d: number, o: LotOpts & { faces?: (FL: Face, FR: Face) => string } = {}) {
+    const r = fromLot(l, o);
+    this.b(x, y, w, d, r.h, r.c, { ...r.opts, extraFaces: o.faces });
+    return r.h;
+  }
+  /**
+   * Real buildings side by side along a street, in the given order, each as wide as its (compressed)
+   * frontage. axis 'x': street runs along x, facades are L faces on the line y = at, buildings extend
+   * back toward smaller y. axis 'y': street runs along y, facades are R faces on x = at, buildings
+   * extend toward smaller x. The row runs from `from` toward `to` and the last building is cut at `to`.
+   */
+  row(axis: Axis, at: number, from: number, to: number, items: RowItem[], maxDepth: number): Placed[] {
+    const dir = Math.sign(to - from) || 1, out: Placed[] = [];
+    let cur = from;
+    for (const it of items) {
+      const len = Math.min(frontage(it.lot.front ?? 25), Math.abs(to - cur));
+      if (len < 0.3) break;
+      const a0 = Math.min(cur, cur + dir * len), dep = it.depth ?? Math.min(maxDepth, frontage(it.lot.depth ?? 50));
+      const [x, y, w, d] = axis === 'x' ? [a0, at - dep, len, dep] : [at - dep, a0, dep, len];
+      const front = it.front ?? (axis === 'x' ? 'L' : 'R');
+      let h: number;
+      if (it.pizza) {
+        const { id, ...po } = it.pizza;
+        const r = fromLot(it.lot, { g0: 2.75, ground: 'custom', ...it, front });
+        h = r.h;
+        this.pizza(id, x, y, w, d, h, r.c, { front: axis === 'x' ? 'L' : 'R', ...po, b: { ...r.opts, ...po.b } });
+      } else h = this.lot(it.lot, x, y, w, d, { ...it, front });
+      out.push({ x, y, w, d, h, lot: it.lot });
+      cur += dir * len;
+    }
+    return out;
   }
 
   /* movers */

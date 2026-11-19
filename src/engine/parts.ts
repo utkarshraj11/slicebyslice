@@ -3,6 +3,7 @@ import {
   type Axis, type Face, INK, C_WIN, TREES, SHIRTS, PANTS, SKIN, HAIR, S,
   rnd, pick, iso, f1, poly, ln, mixc, lt, dk, box, faceL, faceR, frect, ftext, cyl, cone,
 } from './iso';
+import type { Style, Ground } from './styles';
 
 export function windowsSVG(F: Face, cols: number, rows: number, v0: number, v1: number, ww: number, wh: number, c: string, litP = 0.13) {
   let s = ''; const du = F.L / cols, dv = (v1 - v0) / rows; ww = Math.min(ww, du - 0.18);
@@ -71,6 +72,10 @@ export interface BldOpts {
   door?: 'L' | 'R'; stoop?: 'L'; fire?: 'L' | 'R';
   extraFaces?: (FL: Face, FR: Face) => string; extraTop?: string;
   cornice?: boolean; corniceC?: string; tower?: boolean; tu?: number; tv?: number; chimney?: boolean;
+  /* styled buildings (styles.ts) */
+  style?: Style; floors?: number; ground?: Ground; fronts?: 'L' | 'R' | 'LR'; trim?: string; ghost?: boolean;
+  /** stable key (the street address) for per-building colour choices */
+  key?: string;
 }
 export function bld(x: number, y: number, w: number, d: number, h: number, c: string, o: BldOpts = {}) {
   let s = '';
