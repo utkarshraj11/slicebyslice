@@ -2,13 +2,34 @@
 
 A personal pizza-review site. It shows an animated, isometric, "drawn in code" map of New York City and Hoboken, inspired by an isometric San Francisco animation. Each neighborhood is a floating city block. Each pizzeria the owner visited is a storefront with a pin. Clicking a pin opens a review card with a rating, a written review and two photos.
 
-**Everything is in one file, `index.html`.** It has no build step, no framework and no dependencies. The only outside resource is Google Fonts (Fraunces and DM Sans), and the page falls back to system fonts without it. To run it, open the file in a browser or serve the folder with any static server.
+It's a **Vite + React + TypeScript** app. (It started as a single `index.html`; that original is kept as `legacy.html` for reference.) The only outside resource is Google Fonts (Fraunces and DM Sans), and the page falls back to system fonts without it.
+
+```bash
+pnpm install
+pnpm dev        # dev server
+pnpm build      # typecheck + production build to dist/ (static, base './', host anywhere)
+pnpm typecheck
+```
 
 ```
-index.html        the whole site: CSS, data, drawing engine, UI
-tools/preview.py  headless-Chrome screenshot/smoke-test script (Playwright)
-photos/           put review photos here (empty for now)
+index.html                 Vite entry (fonts + #root)
+src/data/places.ts         RATING_MAX, PLACES, HOODS, TOUR: the content
+src/engine/iso.ts          iso math, seeded RNG, SVG-string primitives (box, faces, frect, ftext, cyl…)
+src/engine/parts.ts        buildings, storefronts, trees, people, cars, boats, clouds
+src/engine/tile.ts         class Tile (builder API) + Item/Mover/AABB types
+src/engine/hoods/*.ts      one build<Neighborhood>() per tile (+ liberty decor)
+src/engine/bridge.ts       Brooklyn Bridge geometry + river span
+src/engine/water.ts        water outline + waves
+src/engine/scene.ts        depth sorting (rel/topo/moverIndex), mounting tiles, pins, labels
+src/engine/map.ts          createMap(): camera, pointer/wheel/pinch, animation loop
+src/store.ts               UI state + actions (openPlace, focusHood, tour…) + hash routing
+src/components/*.tsx       MapView, ReviewCard, ListPanel, HoodBar, Grain, icons
+src/styles.css             all CSS
+public/photos/             put review photos here (empty for now)
+tools/preview.mjs          headless-Chrome screenshot/smoke-test script (Playwright)
 ```
+
+**React vs. engine split.** React renders only the chrome (header, buttons, card, list, hood bar) and an empty `<svg>` shell. The ~5k-element scene is built as SVG strings and mounted imperatively by `createMap()` in a `MapView` effect. Don't move the scene into JSX: per-frame mover re-slotting and the "never move tile nodes" rule depend on direct DOM control. State lives in `store.ts` (a tiny external store read with `useSyncExternalStore`), so the camera can read which panels are open synchronously when it refits. The map reports taps through callbacks, and the store calls `map.refit()`, `setActivePin()` and `setOverview()`. `mountScene()` reseeds the RNG, so builds are deterministic (and React StrictMode's double mount is harmless; `destroy()` empties the layers).
 
 ---
 
@@ -18,17 +39,18 @@ photos/           put review photos here (empty for now)
 - Ratings are assumed to be **out of 10** (`RATING_MAX`). The owner hasn't confirmed this scale.
 - The owner said prices are hard to recall, so **prices were left out on purpose**.
 - The owner said they "have changes". Ask what they are before refactoring anything.
-- A previous version is published as a claude.ai artifact. That copy won't update automatically. Host this folder anywhere static, such as GitHub Pages, Netlify or Vercel, or bring the file back to a Claude chat to republish it there.
+- A previous version is published as a claude.ai artifact. That copy won't update automatically. Host `dist/` anywhere static, such as GitHub Pages, Netlify or Vercel.
+- Known pre-existing quirk (also in the original): on mobile the hidden, empty neighborhood bar peeks out as a small blob above the bottom buttons.
 
 ---
 
 ## Editing content (the most common task)
 
-The review data sits at the top of the `<script>`, under the comment `YOUR REVIEWS LIVE HERE`:
+The review data is in `src/data/places.ts`, under the comment `YOUR REVIEWS LIVE HERE`:
 
-```js
-const RATING_MAX = 10;
-const PLACES = [
+```ts
+export const RATING_MAX = 10;
+export const PLACES: Place[] = [
   {id:'joes', hood:'village', name:"Joe's Pizza", address:"7 Carmine St, New York, NY 10014",
    rating:null, review:"", photos:[null,null]},
   ...
@@ -37,8 +59,8 @@ const PLACES = [
 
 - `rating`: a number such as `8.5`, or `null`. Once it's set, the pin shows the number instead of the slice icon, the card fills in the slice meter, and "By rating" in the list ranks the place.
 - `review`: plain text. Line breaks are kept (`white-space: pre-line`).
-- `photos`: up to two image sources. Use relative paths like `"photos/joes-1.jpg"`, which work on any static host and from `file://`, or `data:` URLs. **Remote image URLs won't load if the page is hosted as a claude.ai artifact**, because of its content security policy. Resize photos to about 1200px wide and under 300KB each.
-- `id` is also the deep link. `index.html#joes` opens that review directly. `#village`, `#dumbo` and the other neighborhood ids open a neighborhood.
+- `photos`: up to two image sources. Put files in `public/photos/` and use relative paths like `"photos/joes-1.jpg"` (resolved against the app's base URL by `photoSrc`), or `data:` URLs. Resize photos to about 1200px wide and under 300KB each.
+- `id` is also the deep link. `#joes` opens that review directly. `#village`, `#dumbo` and the other neighborhood ids open a neighborhood.
 - `hood` must be a key of `HOODS`: `hoboken`, `midtown`, `village`, `fidi`, `dumbo` or `midwood`.
 - The order of `PLACES` is the order the card's Prev/Next buttons follow.
 
@@ -64,18 +86,15 @@ The owner's original list had misspellings (for example "Di Farra" and "Carmaine
 
 ---
 
-## Architecture (inside `index.html`)
+## Architecture
 
-The script runs top to bottom in these sections, each marked by a `/* ===== */` banner:
-
-1. **Data**: `RATING_MAX`, `PLACES`, `HOODS` (name, subtitle, dot color), `TOUR` (order of the guided tour).
-2. **Isometric drawing engine**: pure functions that return **SVG strings**.
-3. **Tile builder** (`class Tile`) and **one `build<Neighborhood>()` function per block**.
-4. **Brooklyn Bridge and water**, drawn as top-level scene items.
-5. **Assembly and depth sorting**: builds the DOM and orders everything back to front.
-6. **Camera**: viewBox-based pan, zoom, fly-to and framing.
-7. **UI**: review card, list panel, neighborhood bar, tour, hash routing, keyboard, pointer, wheel and pinch.
-8. **Animation loop**: cars, walkers, boats, the train and clouds.
+1. **Data** (`src/data/places.ts`): `RATING_MAX`, `PLACES`, `HOODS` (name, subtitle, dot color), `TOUR` (order of the guided tour).
+2. **Isometric drawing engine** (`engine/iso.ts`, `engine/parts.ts`): pure functions that return **SVG strings**.
+3. **Tile builder** (`engine/tile.ts`) and **one `build<Neighborhood>()` per block** (`engine/hoods/`). The hood files keep the original compact one-line-per-object style on purpose; they read like a layout script.
+4. **Brooklyn Bridge and water** (`engine/bridge.ts`, `engine/water.ts`), drawn as top-level scene items.
+5. **Assembly and depth sorting** (`engine/scene.ts`): builds the DOM and orders everything back to front.
+6. **Camera, input, animation loop** (`engine/map.ts`): viewBox pan/zoom/fly-to/framing; pointer, wheel, pinch; cars, walkers, boats, the train and clouds.
+7. **UI** (`src/store.ts`, `src/App.tsx`, `src/components/`): review card, list panel, neighborhood bar, tour, hash routing, keyboard.
 
 ### Coordinate system (read this before drawing anything)
 
@@ -150,7 +169,7 @@ In isometric view, a building on the **near side** of a street (larger x or y) c
 - FiDi: a deeper plaza and lower buildings south of it, so the stock exchange flag shows.
 - Hoboken: a park in front of Washington St, so Benny Tudino's shows.
 
-Keep near-side buildings low, or leave gaps, and **check every change with screenshots** (`tools/preview.py`). The same applies across tiles: tall buildings near a tile's back edge cover the front strip of the tile behind it. That's why the tallest buildings sit in the back-right corners.
+Keep near-side buildings low, or leave gaps, and **check every change with screenshots** (`pnpm shots`). The same applies across tiles: tall buildings near a tile's back edge cover the front strip of the tile behind it. That's why the tallest buildings sit in the back-right corners.
 
 ### Camera and UI
 
@@ -173,10 +192,11 @@ Cream paper background (`#f3efe5`) with a canvas-generated grain overlay. Ink ou
 ## Previewing and testing
 
 ```bash
-pip install playwright && python -m playwright install chromium
-python tools/preview.py                    # whole map + every neighborhood, desktop
-python tools/preview.py --mobile           # same at 390×844
-python tools/preview.py --place joes       # opens a review card
+pnpm exec playwright install chromium            # once
+pnpm build && pnpm shots             # whole map + every neighborhood, desktop (serves dist/)
+pnpm shots --mobile                  # same at 390×844
+pnpm shots --place joes              # opens a review card
+pnpm shots --url http://localhost:5173   # shoot the running dev server instead
 ```
 
-Screenshots go to `shots/`. The script prints any console or page errors and a rough frame rate. The scene has about 5k SVG elements and runs at about 50fps in headless Chrome without a GPU. Look at the screenshots after **any** change to geometry or layout, because depth and overlap bugs only show up visually.
+Screenshots go to `shots/`. Navigation in the script uses the URL hash. The script prints any console or page errors and a rough frame rate. The scene has about 5k SVG elements and runs at about 50fps in headless Chrome without a GPU. Look at the screenshots after **any** change to geometry or layout, because depth and overlap bugs only show up visually.
