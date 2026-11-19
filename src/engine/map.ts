@@ -140,7 +140,7 @@ export function createMap(svg: SVGSVGElement, layers: SceneLayers, cb: MapCallba
     }
   }
 
-  /* ---------- pointer: drag to turn (mouse) or pan (touch, shift / right-drag), pinch, tap ---------- */
+  /* ---------- pointer: drag to pan; right- or shift-drag to turn (mouse); pinch; tap ---------- */
   const ptrs = new Map<number, { x: number; y: number }>();
   let drag: { x: number; y: number; cx: number; cy: number; target: EventTarget | null; turn: boolean; tx: number } | null = null;
   let pinch: { d: number; w: number; m: [number, number] } | null = null, moved = false;
@@ -157,7 +157,7 @@ export function createMap(svg: SVGSVGElement, layers: SceneLayers, cb: MapCallba
   }
   const onDown = (e: PointerEvent) => {
     ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
-    if (ptrs.size === 1) { drag = { x: e.clientX, y: e.clientY, cx: cam.cx, cy: cam.cy, target: e.target, turn: e.pointerType === 'mouse' && e.button === 0 && !e.shiftKey, tx: e.clientX }; moved = false; }
+    if (ptrs.size === 1) { drag = { x: e.clientX, y: e.clientY, cx: cam.cx, cy: cam.cy, target: e.target, turn: e.pointerType === 'mouse' && (e.button === 2 || e.shiftKey), tx: e.clientX }; moved = false; }
     else if (ptrs.size === 2) { const [a, b] = [...ptrs.values()]; pinch = { d: Math.hypot(a.x - b.x, a.y - b.y) || 1, w: cam.w, m: toWorld((a.x + b.x) / 2, (a.y + b.y) / 2) }; moved = true; }
   };
   const onMove = (e: PointerEvent) => {
@@ -177,14 +177,14 @@ export function createMap(svg: SVGSVGElement, layers: SceneLayers, cb: MapCallba
   const onUp = (e: PointerEvent) => {
     const had = ptrs.has(e.pointerId); ptrs.delete(e.pointerId);
     if (ptrs.size < 2) pinch = null;
-    if (ptrs.size === 0) { if (had && drag && !moved && e.type === 'pointerup') tap(drag.target); drag = null; svg.classList.remove('dragging'); }
+    if (ptrs.size === 0) { if (had && drag && !moved && !drag.turn && e.type === 'pointerup') tap(drag.target); drag = null; svg.classList.remove('dragging'); }
   };
   const onWheel = (e: WheelEvent) => {
     e.preventDefault(); cb.onUserMove(); camAnim = null;
     const f = Math.exp(e.deltaY * (e.ctrlKey ? 0.012 : 0.0016)); const m = toWorld(e.clientX, e.clientY);
     cam.w = Math.min(maxW(), Math.max(minW(), cam.w * f)); cam.cx = m[0] - ((e.clientX - W / 2) * cam.w) / W; cam.cy = m[1] - ((e.clientY - H / 2) * cam.w) / W; applyCam();
   };
-  const noMenu = (e: Event) => e.preventDefault(); // right-drag pans
+  const noMenu = (e: Event) => e.preventDefault(); // right-drag turns
   const onResize = () => { W = innerWidth; H = innerHeight; Object.assign(cam, targetFor()); camAnim = null; applyCam(); };
   svg.addEventListener('pointerdown', onDown);
   svg.addEventListener('pointermove', onMove);

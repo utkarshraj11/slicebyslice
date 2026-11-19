@@ -34,6 +34,7 @@ header{position:fixed;left:12px;top:10px;max-width:400px;pointer-events:none;z-i
 .app.zoomed header h1{font-size:30px;margin-bottom:0}
 .app.zoomed header .kicker{font-size:10.5px}
 @media (min-width:761px){.app.panel-open .hoodbar{left:calc((100vw - 434px)/2)}}
+#fog{pointer-events:none}#fog .fog{fill:var(--paper);opacity:.9}
 #sky{transition:opacity .6s}
 #map.near #sky{opacity:0}
 #map #world{transition:opacity .17s}

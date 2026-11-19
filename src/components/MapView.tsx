@@ -5,11 +5,11 @@ import { attachMap, mapView, openPlace, focusHood, tapBackground, stopTour, rota
 /** The isometric map. React renders the empty <svg> shell once; the engine owns everything inside. */
 export function MapView() {
   const svg = useRef<SVGSVGElement>(null);
-  const scene = useRef<SVGGElement>(null), sky = useRef<SVGGElement>(null), labels = useRef<SVGGElement>(null), pins = useRef<SVGGElement>(null);
+  const scene = useRef<SVGGElement>(null), fog = useRef<SVGGElement>(null), sky = useRef<SVGGElement>(null), labels = useRef<SVGGElement>(null), pins = useRef<SVGGElement>(null);
   const map = useRef<MapHandle | null>(null), bar = useRef<HTMLDivElement>(null), barLabel = useRef<HTMLSpanElement>(null), pct = useRef<HTMLSpanElement>(null);
 
   useEffect(() => {
-    const m = createMap(svg.current!, { scene: scene.current!, sky: sky.current!, labels: labels.current!, pins: pins.current! }, {
+    const m = createMap(svg.current!, { scene: scene.current!, fog: fog.current!, sky: sky.current!, labels: labels.current!, pins: pins.current! }, {
       getView: mapView,
       onPin: id => { stopTour(); openPlace(id); },
       onHood: focusHood,
@@ -46,6 +46,7 @@ export function MapView() {
       </defs>
       <g id="world" stroke="#2e2b29" strokeWidth=".9" strokeLinejoin="round" strokeLinecap="round">
         <g id="scene" ref={scene} />
+        <g id="fog" ref={fog} />
         <g id="sky" ref={sky} />
         <g id="labels" ref={labels} />
         <g id="pins" ref={pins} />

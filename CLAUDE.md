@@ -162,6 +162,10 @@ iso(x, y, z)  => iso0(...rot(x, y), z)                           // world coords
 - **Never re-append or move tile `<g>` nodes after mounting** (it restarts the intro "drop" animation); a rotation replaces everything instead, with the intro switched off (`no-intro`).
 - Random choices come from a seeded generator, reseeded on every build, so each rotation is deterministic. Per-building colours use an address hash, not the RNG.
 
+### Fog of war
+
+`engine/fog.ts`, like GTA's map or Pixel Chennai: the neighbourhood tiles, the Statue of Liberty, the Brooklyn Bridge and `LIT_AREAS` (Lower Manhattan from the Village to the Battery, the harbour, the East River and Brooklyn from DUMBO to Midwood) are lit; everything else on the island fades into the paper. `fogSVG()` fills the `#fog` layer (between `#scene` and `#sky`, `pointer-events: none`) with a paper-coloured sheet masked by stepped rings around each lit box's screen outline (grown by 7 / 4 / 1.8 / 0.4 units, up to the tile's `top`, so towers stay lit). `contextSVG()` draws a dim grid of flat city blocks on dry land outside the tiles, under the fog, so unexplored land reads as city. Strength and colour: `#fog .fog` in `styles.css` (for a GTA-style dark void, set its `fill` to a dark slate). A new neighbourhood tile is lit automatically.
+
 ### Distance fade
 
 When a review card is open, `fade()` in `map.ts` classes every static object by its view-space distance from the pizzeria (`fadeLevel`: < 6 units full detail, then `f1`/`f2`/`f3`). The CSS turns those into a solid pale "context massing" wash (grayscale + sepia filter, not transparency, so faded buildings don't show through each other); the farthest band also fades. Movers can't take the wash, so they only fade (`FADE_OP`). Ground (roads, parks, water) stays in full colour.
@@ -188,7 +192,7 @@ The old rule still matters for the plain neighbourhood view: a near-side box who
 
 - The camera is `{cx, cy, w}` in SVG user units and drives the `viewBox`. `fit(bounds)` frames bounds minus the screen areas covered by the panel, header, neighborhood bar and (whole-map view) a left margin for labels (`occlusion()`). `flyTo()` eases with a slight zoom-out bump.
 - `targetFor()` frames the open place's surroundings (`placeBounds`), else one tile, else the whole map. On phones (< 760px) the whole map frames Manhattan and Brooklyn only.
-- **Rotation UI**: mouse drag turns the view (every ~110px of horizontal drag is a quarter turn, via `cb.onTurn`); shift-drag or right-drag pans; touch drags pan and pinch zooms. The compass (`components/Compass.tsx`) has rotate buttons and a north needle; clicking the needle resets to k = 0. Keys `Q`/`E`.
+- **Rotation UI**: drag pans; right-drag or shift-drag turns the view (every ~110px of horizontal drag is a quarter turn, via `cb.onTurn`); touch drags pan and pinch zooms. The compass (`components/Compass.tsx`) has rotate buttons and a north needle; clicking the needle resets to k = 0. Keys `Q`/`E`.
 - **Scale bar and zoom** (`MapView.tsx`): `applyCam` reports a round scale length and zoom % through `cb.onScale` (written straight to the DOM, since it runs every camera frame); the +/− buttons call `map.zoomBy()`. The scale is the drawing scale (1 unit = 12.5 ft); distances between neighbourhoods are shortened, so it's only true within a block. `state.rot` in the store; `openPlace` auto-rotates; the tour picks each hood's best rotation (`bestRot`).
 - Pins and labels live in screen-scaled layers (`#pins`, `#labels`). Pin tags show only when zoomed in (`near`). `LABEL_AT` picks the screen corner each label hangs from.
 - State: `mode`, `curHood`, `curPlace`, `listOpen`, `listBy`, `touring`, `rot`. URL hash: `#<placeId>` or `#<hoodId>`. Keys: Esc, ←/→, Enter on a pin, Q/E.

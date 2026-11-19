@@ -6,6 +6,7 @@ import { boatSVG, cloudSVG } from './parts';
 import type { Tile, AABB, Mover, PinInfo } from './tile';
 import { bridgeSVG, BRIDGE_BOUNDS } from './bridge';
 import { waterSVG, WATER_BOUNDS, BOATS } from './water';
+import { fogSVG, contextSVG } from './fog';
 import { buildMidtown } from './hoods/midtown';
 import { buildVillage } from './hoods/village';
 import { buildFidi } from './hoods/fidi';
@@ -74,7 +75,7 @@ export interface Scene {
   tiles: Tile[]; tileById: Record<string, Tile>; topSorted: TopItem[];
   boats: Mover[]; clouds: Cloud[]; pinObjs: PinObj[]; labelObjs: LabelObj[]; pins: Record<string, PinInfo>;
 }
-export interface SceneLayers { scene: Element; sky: Element; labels: Element; pins: Element }
+export interface SceneLayers { scene: Element; fog: Element; sky: Element; labels: Element; pins: Element }
 
 /** Which corner of the tile (on screen) each neighborhood label hangs from. */
 const LABEL_AT: Record<HoodId, 'left' | 'top' | 'bottom'> = { hoboken: 'left', midtown: 'top', village: 'left', fidi: 'bottom', dumbo: 'top', midwood: 'bottom' };
@@ -106,7 +107,7 @@ export function mountScene(L: SceneLayers, intro: boolean): Scene {
   for (const p of PLACES) if (!pins[p.id]) throw new Error(`No pizza(...) call registers a pin for place "${p.id}"`);
 
   // top-level statics
-  const TOPL: TopItem[] = [{ node: el('g', { class: 'water' }, waterSVG()), ...rotAABB(WATER_BOUNDS) }];
+  const TOPL: TopItem[] = [{ node: el('g', { class: 'water' }, waterSVG() + contextSVG(tiles)), ...rotAABB(WATER_BOUNDS) }];
   tiles.forEach((t, i) => {
     const g = el('g', { class: 'tile' + (t.hood ? ' hood' : ''), 'data-hood': t.hood || '' }) as SVGGElement;
     const lift = el('g', { class: 'lift' }) as SVGGElement;
@@ -127,6 +128,9 @@ export function mountScene(L: SceneLayers, intro: boolean): Scene {
   TOPL.push({ node: el('g', { class: 'bridge' }, bridgeSVG()), ...rotAABB(BRIDGE_BOUNDS) });
   const topSorted = [TOPL[0], ...topo(TOPL.slice(1))];
   topSorted.forEach(o => L.scene.appendChild(o.node));
+
+  // fog of war over everything but the neighbourhoods we've been to
+  L.fog.innerHTML = fogSVG(tiles);
 
   // boats (top-level movers)
   const boats: Mover[] = BOATS.map(b => {
