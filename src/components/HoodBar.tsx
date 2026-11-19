@@ -1,6 +1,6 @@
 import { useRef } from 'react';
 import { PLACES, HOODS, type HoodId } from '../data/places';
-import { openPlace, stopTour } from '../store';
+import { openPlace } from '../store';
 
 /** Bottom bar listing the current neighborhood's spots. Keeps its last content while sliding away. */
 export function HoodBar({ hood, curPlace }: { hood: HoodId | null; curPlace: string | null }) {
@@ -12,7 +12,7 @@ export function HoodBar({ hood, curPlace }: { hood: HoodId | null; curPlace: str
       {id && <>
         <b>{HOODS[id].name}</b>
         {PLACES.filter(p => p.hood === id).map(p => (
-          <button key={p.id} className={curPlace === p.id ? 'on' : ''} onClick={() => { stopTour(); openPlace(p.id); }}>{p.name}</button>
+          <button key={p.id} className={curPlace === p.id ? 'on' : ''} onClick={() => openPlace(p.id)}>{p.name}</button>
         ))}
       </>}
     </div>

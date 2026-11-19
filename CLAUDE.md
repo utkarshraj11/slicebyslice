@@ -18,7 +18,7 @@ src/world/compass.ts       Dir, quarter-turn view rotation (thetaOf, visibleAt, 
 src/world/kit.ts           class World: the builder (land, road, building, pizza, house, tree, car, boat, context…), pixel facade textures, seeded RNG
 src/world/layout.ts        buildWorld(): the whole map, hand-placed, one commented section per neighbourhood + landmarks
 src/world/map.ts           createMap(): renderer + pixel pass, lighting/time of day, camera framing and swings, input, DOM pins/labels, cutaway
-src/store.ts               UI state + actions (openPlace, focusHood, tour…) + hash routing
+src/store.ts               UI state + actions (openPlace, focusHood, list, rotation) + hash routing
 src/components/*.tsx       MapView, ReviewCard, ListPanel, HoodBar, Compass, Grain, icons
 src/styles.css             all CSS
 public/photos/             put review photos here (empty for now)
@@ -38,9 +38,9 @@ tools/preview.mjs          headless-Chrome screenshot/smoke-test script (Playwri
 - **Pixel-diorama rewrite (Nov 2026, branch `pixel-islands`)**, asked for by the owner after the SVG map "didn't look great": matching real scale was hurting the design, so the map is now hand-placed and shortened, with one or two famous landmarks per neighbourhood, but still one connected map in real geography ("hoboken to left of manhattan, dumbo and brooklyn to the right"). Each pizzeria stays on its real street and side (the owner's earlier asks still hold: Benny Tudino's across Washington St from Basile's, Panello on Monroe St, the riverfront behind Benny's, a basketball court across the road from Joe's).
 - Landmarks: Hoboken Terminal and clock tower; Central Park, Columbus Circle, Hearst Tower, Port Authority, Times Square billboards (brand-free), the Empire State Building; Hudson River Park and Pier 45, Washington Square and its arch, the West 4th St courts; the Stock Exchange, Federal Hall, the Battery and Castle Clinton; the Brooklyn Bridge; Brooklyn Bridge Park and the carousel, the DUMBO clock tower building; Prospect Park; the B/Q cut and Avenue J station; the Statue of Liberty.
 - Outside the six neighbourhoods, Brooklyn is "context city" (`World.context`): pale, low, merged into one mesh.
-- **Rotation** is still four quarter-turn views (the store, compass, tour and auto-rotation are built on that), but the camera now swings smoothly between them. Free drag-rotation would be a small change in `map.ts` (`onTurn` → continuous `theta`) if wanted.
+- **Rotation** is still four quarter-turn views (the store, compass and auto-rotation are built on that), but the camera now swings smoothly between them. Free drag-rotation would be a small change in `map.ts` (`onTurn` → continuous `theta`) if wanted.
 - Known pre-existing quirk: on mobile the hidden, empty neighborhood bar peeks out as a small blob above the bottom buttons; the scale bar overlaps the header text in the phone overview.
-- Performance: every hood building is its own mesh (a few hundred draw calls, rendered twice by the pixel pass, plus shadows). Fine on a GPU; headless software WebGL shows ~12–60 fps. If phones struggle, merge static buildings per neighbourhood like `context()` does.
+- Performance: every hood building is its own mesh (a few hundred draw calls, rendered twice by the pixel pass, plus shadows). 60 fps on an Apple M5 GPU; not yet measured on a phone. If phones struggle, merge static buildings per neighbourhood like `context()` does.
 
 
 ## Editing content (the most common task)
@@ -87,11 +87,11 @@ The owner's original list had misspellings (for example "Di Farra" and "Carmaine
 
 ## Architecture
 
-1. **Data** (`src/data/places.ts`): `RATING_MAX`, `PLACES`, `HOODS` (name, subtitle, dot color), `TOUR` (order of the guided tour).
+1. **Data** (`src/data/places.ts`): `RATING_MAX`, `PLACES`, `HOODS` (name, subtitle, dot color), `HOOD_ORDER` (order of the list's neighborhood groups).
 2. **Builder kit** (`world/kit.ts`): `World` collects meshes into `root`, plus `pins`, `hoods` (bounds), `movers`, `windows` (materials lit at night) and `glow` (always lit).
 3. **The map** (`world/layout.ts`): one hand-placed section per neighbourhood. They read like a layout script; keep it that way.
 4. **Live map** (`world/map.ts`): rendering, camera, input, overlay.
-5. **UI** (`src/store.ts`, `src/App.tsx`, `src/components/`): review card, list panel, neighborhood bar, tour, hash routing, keyboard.
+5. **UI** (`src/store.ts`, `src/App.tsx`, `src/components/`): review card (with an "Open in Google Maps" link built from name + address), list panel, neighborhood bar, hash routing, keyboard. The guided tour was removed at the owner's request (Nov 2026).
 
 ### World coordinates
 
@@ -123,7 +123,7 @@ Movers: `car(axis, a, b, c, speed, colour, {bus, y})` loops from a to b along `a
 - `fit(bounds, theta)` frames a box minus the screen areas covered by the header, panel and hood bar (`avail()`); `refit()` frames the open place (±11 units), else the neighbourhood, else the whole map (phones: Manhattan and Brooklyn). `flyTo` eases target, zoom (with a slight zoom-out bump) and theta together; `setRotation(k)` swings the short way round.
 - Input: drag pans, right/shift-drag turns (`onTurn` every ~110 px), wheel zooms at the cursor, two-finger pinch zooms. A tap raycasts the scene and resolves to a neighbourhood by its bounds.
 - **Cutaway**: when a card is open, after the camera settles, every building between the camera and the open storefront whose screen box overlaps it is hidden (`cutaway()`), so layouts can stay true to life. Opening a place also auto-rotates so the storefront faces the camera (`rotShowing` in the store).
-- Pins and labels are DOM buttons in `.overlay`, projected each frame; tags show when zoomed in (`.near`), labels only in the overview (`.ov`) and hang under the neighbourhood's lowest edge on screen.
+- Pins and labels are DOM buttons in `.overlay`, projected each frame; tags show when zoomed in (`.near`), labels only in the overview (`.ov`) and hang under the neighbourhood's corner nearest the camera (a single point at every azimuth; edge midpoints tie on square neighbourhoods and made labels flicker).
 - `prefers-reduced-motion` freezes movers and makes camera moves instant.
 
 
@@ -138,4 +138,4 @@ pnpm shots --url http://localhost:5173   # shoot the running dev server instead
 pnpm shots --hood dumbo --zoom 6 [--at x,y]   # zoom in N wheel steps at 2x
 ```
 
-Screenshots go to `shots/`. Navigation in the script uses the URL hash. Headless Chrome runs WebGL in software (SwiftShader), so the printed frame rate is far below a real GPU's, and "GPU stall due to ReadPixels" warnings come from taking screenshots. Look at the screenshots after **any** layout change, from more than one rotation (press `q` in the page, or open a place to trigger auto-rotation).
+Screenshots go to `shots/`. Navigation in the script uses the URL hash. Headless Chrome runs WebGL in software (SwiftShader), so the printed frame rate is far below a real GPU's (on an Apple M5 via `chromium.launch({ channel: 'chrome', args: ['--use-angle=metal'] })` it holds 60 fps), and "GPU stall due to ReadPixels" warnings come from taking screenshots. Look at the screenshots after **any** layout change, from more than one rotation (press `q` in the page, or open a place to trigger auto-rotation).

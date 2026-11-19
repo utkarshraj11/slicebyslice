@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { createMap, type MapHandle } from '../world/map';
-import { attachMap, mapView, openPlace, focusHood, tapBackground, stopTour, rotate, getState } from '../store';
+import { attachMap, mapView, openPlace, focusHood, tapBackground, rotate, getState } from '../store';
 
 const TOD = ['☀ Day', '◐ Dusk', '☾ Night'];
 
@@ -13,10 +13,9 @@ export function MapView() {
   useEffect(() => {
     const m = createMap(host.current!, overlay.current!, {
       getView: mapView,
-      onPin: id => { stopTour(); openPlace(id); },
+      onPin: openPlace,
       onHood: focusHood,
       onBackground: tapBackground,
-      onUserMove: stopTour,
       onTurn: rotate,
       // written straight to the DOM: this runs on camera frames
       onScale: (m, px, z) => {

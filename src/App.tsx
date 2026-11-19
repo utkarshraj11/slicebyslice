@@ -1,8 +1,8 @@
 import { useEffect } from 'react';
 import { PLACES, HOOD_IDS } from './data/places';
 import {
-  useStore, getState, routeHash, onHashChange, back, stepPlace, openPlace, stopTour,
-  showOverview, toggleTour, toggleList, rotate,
+  useStore, getState, routeHash, onHashChange, back, stepPlace,
+  showOverview, toggleList, rotate,
 } from './store';
 import { MapView } from './components/MapView';
 import { ReviewCard } from './components/ReviewCard';
@@ -10,7 +10,7 @@ import { ListPanel } from './components/ListPanel';
 import { HoodBar } from './components/HoodBar';
 import { Grain } from './components/Grain';
 import { Compass } from './components/Compass';
-import { FrameIcon, PlayIcon, StopIcon, ListIcon } from './components/icons';
+import { FrameIcon, ListIcon } from './components/icons';
 
 export default function App() {
   const s = useStore();
@@ -21,8 +21,6 @@ export default function App() {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') back();
       if (getState().curPlace && (e.key === 'ArrowRight' || e.key === 'ArrowLeft')) stepPlace(e.key === 'ArrowRight' ? 1 : -1);
-      const pin = e.target instanceof Element ? e.target.closest<SVGGElement>('.pin') : null;
-      if ((e.key === 'Enter' || e.key === ' ') && pin) { e.preventDefault(); stopTour(); openPlace(pin.dataset.id!); }
       if (!e.metaKey && !e.ctrlKey && !e.altKey && !(e.target instanceof HTMLInputElement)) {
         if (e.key === 'q' || e.key === 'Q') rotate(1);
         if (e.key === 'e' || e.key === 'E') rotate(-1);
@@ -46,8 +44,7 @@ export default function App() {
       </header>
 
       <div className="controls">
-        <button className="btn" hidden={s.mode === 'overview'} onClick={() => { stopTour(); showOverview(); }}><FrameIcon />Whole map</button>
-        <button className="btn" onClick={toggleTour}>{s.touring ? <StopIcon /> : <PlayIcon />}<span>{s.touring ? 'Stop tour' : 'Take the tour'}</span></button>
+        <button className="btn" hidden={s.mode === 'overview'} onClick={showOverview}><FrameIcon />Whole map</button>
         <button className="btn primary" onClick={toggleList}><ListIcon />All {PLACES.length} spots</button>
       </div>
 

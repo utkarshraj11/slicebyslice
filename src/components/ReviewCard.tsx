@@ -29,6 +29,9 @@ function Card({ p }: { p: (typeof PLACES)[number] }) {
       <span className="chip"><i style={{ background: h.color }} />{h.name} · {h.sub}</span>
       <h2>{p.name}</h2>
       <p className="addr"><PinIcon /><span>{p.address}</span></p>
+      <a className="gmaps" href={`https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${p.name}, ${p.address}`)}`} target="_blank" rel="noopener noreferrer">
+        Open in Google Maps<span aria-hidden="true"> ↗</span><span className="sr"> (opens in a new tab)</span>
+      </a>
       <div className="rating">
         <div className={'score' + (has ? '' : ' empty')}>{has ? p.rating : '–'}<small>/{RATING_MAX}</small></div>
         <div className="rmeta">
