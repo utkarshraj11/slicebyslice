@@ -6,6 +6,7 @@ import * as THREE from 'three';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPixelatedPass } from 'three/addons/postprocessing/RenderPixelatedPass.js';
 import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+import { SketchPass } from './sketch';
 import { HOODS, HOOD_IDS, PLACES, type HoodId } from '../data/places';
 import { type Dir, thetaOf } from './compass';
 import { buildWorld } from './layout';
@@ -33,6 +34,8 @@ export interface MapHandle {
   zoomBy(f: number): void;
   /** 0 day, 1 dusk, 2 night */
   setTime(k: number): void;
+  /** 0 pixel art, 1 sketch (hand-drawn outlines, watercolour wash) */
+  setStyle(k: number): void;
   /** Move the view by screen pixels (arrow keys). */
   pan(dx: number, dy: number): void;
   destroy(): void;
@@ -54,9 +57,9 @@ const UP = new THREE.Vector3(0, 1, 0);
 const WORLD: Bounds = { x0: -76, z0: -74, x1: 68, z1: 76, y1: 12 };
 const WORLD_PHONE: Bounds = { x0: -30, z0: -62, x1: 68, z1: 76, y1: 12 }; // Manhattan and Brooklyn
 const TIMES = [
-  { bg: '#f3efe5', hemi: ['#dfefff', 1.15], sun: ['#fff1d6', 2.1, [40, 80, 25]], win: 0, glow: 0.55, water: '#6fb7c4' },
-  { bg: '#f1c9a5', hemi: ['#b9a0d8', 0.8], sun: ['#ff9a5a', 1.7, [70, 25, -20]], win: 0.7, glow: 0.9, water: '#7f8fb8' },
-  { bg: '#1f2340', hemi: ['#4a5590', 0.45], sun: ['#9fb0ff', 0.35, [-40, 80, 20]], win: 1.4, glow: 1.2, water: '#2c3f66' },
+  { bg: '#f3efe5', hemi: ['#dfefff', 1.15], sun: ['#fff1d6', 2.1, [40, 80, 25]], win: 0, glow: 0.55, water: '#6fb7c4', ink: '#3d342f' },
+  { bg: '#f1c9a5', hemi: ['#b9a0d8', 0.8], sun: ['#ff9a5a', 1.7, [70, 25, -20]], win: 0.7, glow: 0.9, water: '#7f8fb8', ink: '#33263a' },
+  { bg: '#1f2340', hemi: ['#4a5590', 0.45], sun: ['#9fb0ff', 0.35, [-40, 80, 20]], win: 1.4, glow: 1.2, water: '#2c3f66', ink: '#0b0d1c' },
 ] as const;
 const PIN_SVG = `<svg viewBox="-15 -42 30 44" width="30" height="44" aria-hidden="true"><ellipse cx="0" cy="0" rx="6" ry="2.4" fill="rgba(0,0,0,.25)"/><g class="pb"><path d="M0 0C-4 -7 -13 -13 -13 -24A13 13 0 1 1 13 -24C13 -13 4 -7 0 0Z" fill="#d9473a" stroke="#2e2b29" stroke-width="1.7"/><circle cx="0" cy="-24" r="8.6" fill="#fff8ec" stroke="#2e2b29" stroke-width="1.2"/><path d="M-5 -28Q0 -30.2 5 -28L0 -18Z" fill="#f6c453" stroke="#c9813c" stroke-width="1"/><circle cx="-1.2" cy="-25.6" r="1.1" fill="#d9473a"/><circle cx="1.4" cy="-23.6" r="1" fill="#d9473a"/></g></svg>`;
 const ease = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - (-2 * t + 2) ** 3 / 2);
@@ -77,8 +80,11 @@ export function createMap(host: HTMLDivElement, overlay: HTMLDivElement, cb: Map
   host.appendChild(renderer.domElement);
   const cam = new THREE.OrthographicCamera(-1, 1, 1, -1, 1, 1200);
   const composer = new EffectComposer(renderer);
-  composer.addPass(new RenderPixelatedPass(Math.max(1, Math.round(PIXEL_CSS * dpr)), scene, cam, { normalEdgeStrength: 0.35, depthEdgeStrength: 0.5 }));
+  const pixelPass = new RenderPixelatedPass(Math.max(1, Math.round(PIXEL_CSS * dpr)), scene, cam, { normalEdgeStrength: 0.35, depthEdgeStrength: 0.5 });
+  const sketchPass = new SketchPass(scene, cam, dpr); sketchPass.enabled = false;
+  composer.addPass(pixelPass); composer.addPass(sketchPass);
   composer.addPass(new OutputPass());
+  function setStyle(k: number) { pixelPass.enabled = k !== 1; sketchPass.enabled = k === 1; host.classList.toggle('sketch', k === 1); }
   const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
   function setTime(k: number) {
@@ -89,6 +95,7 @@ export function createMap(host: HTMLDivElement, overlay: HTMLDivElement, cb: Map
     W.windows.forEach(m => (m.emissiveIntensity = t.win)); W.glow.forEach(m => (m.emissiveIntensity = t.glow));
     water.color.set(t.water);
     overlay.classList.toggle('night', k === 2);
+    sketchPass.setTones(t.ink, t.bg);
   }
   setTime(0);
 
@@ -330,13 +337,14 @@ export function createMap(host: HTMLDivElement, overlay: HTMLDivElement, cb: Map
     pan: (dx, dy) => { anim = null; spin = 0; touch(); panBy(dx, dy); cutDirty = true; },
     zoomBy: f => { touch(); flyTo(target.clone(), clampH(viewH * f), theta, 350); },
     setTime,
+    setStyle,
     destroy: () => {
       renderer.setAnimationLoop(null);
       el.removeEventListener('pointerdown', onDown); el.removeEventListener('pointermove', onMove);
       el.removeEventListener('pointerup', onUp); el.removeEventListener('pointercancel', onUp);
       el.removeEventListener('wheel', onWheel); el.removeEventListener('contextmenu', onCtx);
       removeEventListener('resize', onResize);
-      composer.dispose(); renderer.dispose(); el.remove(); overlay.innerHTML = '';
+      composer.dispose(); sketchPass.dispose(); renderer.dispose(); el.remove(); overlay.innerHTML = '';
     },
   };
 }

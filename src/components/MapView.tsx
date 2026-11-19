@@ -3,11 +3,12 @@ import { createMap, type MapHandle } from '../world/map';
 import { attachMap, mapView, openPlace, focusHood, tapBackground, syncRot, getState } from '../store';
 
 const TOD = ['☀ Day', '◐ Dusk', '☾ Night'];
+const STYLES = ['▦ Pixel', '✎ Sketch'];
 
 /** The map. React renders an empty host and overlay once; the engine (world/map.ts) owns the canvas, pins and labels. */
 export function MapView() {
   const host = useRef<HTMLDivElement>(null), overlay = useRef<HTMLDivElement>(null);
-  const [tod, setTod] = useState(0);
+  const [tod, setTod] = useState(0), [style, setStyle] = useState(0);
   const map = useRef<MapHandle | null>(null), bar = useRef<HTMLDivElement>(null), barLabel = useRef<HTMLSpanElement>(null), pct = useRef<HTMLSpanElement>(null);
 
   useEffect(() => {
@@ -33,10 +34,14 @@ export function MapView() {
   }, []);
 
   const nextTod = () => { const k = (tod + 1) % TOD.length; setTod(k); map.current?.setTime(k); };
+  const nextStyle = () => { const k = (style + 1) % STYLES.length; setStyle(k); map.current?.setStyle(k); };
   return (<>
     <div id="map" ref={host} role="application" aria-label="Isometric map of New York City and Hoboken pizza spots" />
     <div className="overlay" ref={overlay} />
-    <button className="todbtn" onClick={nextTod} title="Change the light">{TOD[tod]}</button>
+    <div className="looks" role="group" aria-label="Look">
+      <button onClick={nextStyle} title="Switch between pixel art and a hand-drawn sketch">{STYLES[style]}</button>
+      <button onClick={nextTod} title="Change the light">{TOD[tod]}</button>
+    </div>
     <div className="scalebar" aria-hidden="true"><span ref={barLabel} /><div ref={bar} /></div>
     <div className="zoomctl" role="group" aria-label="Zoom">
       <button aria-label="Zoom in" title="Zoom in" onClick={() => map.current?.zoomBy(1 / 1.5)}>+</button>
