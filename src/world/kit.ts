@@ -166,7 +166,8 @@ export class World {
     if (sign) {
       const W = Math.round((f.L - 0.3) * 20), [s, sx] = canvas(W, 12);
       sx.fillStyle = signBg; sx.fillRect(0, 0, W, 12); sx.fillStyle = signFg; sx.font = 'bold 9px sans-serif'; sx.textAlign = 'center'; sx.textBaseline = 'middle'; sx.fillText(sign, W / 2, 6.5, W - 2);
-      const m = new THREE.MeshLambertMaterial({ map: pixel(new THREE.CanvasTexture(s)), emissive: '#ffffff', emissiveIntensity: 0 });
+      const tex = pixel(new THREE.CanvasTexture(s)); // glows with its own image at night, so the lettering stays readable
+      const m = new THREE.MeshLambertMaterial({ map: tex, emissive: '#ffffff', emissiveMap: tex, emissiveIntensity: 0 });
       this.windows.push(m);
       const p = new THREE.Mesh(new THREE.PlaneGeometry(f.L - 0.3, 0.6), m); p.position.set(0, 1.75, 0.03); g.add(p);
     }

@@ -52,7 +52,7 @@ export default function App() {
         <button className="btn primary" onClick={toggleList}><ListIcon />All {PLACES.length} spots</button>
       </div>
 
-      <div className="hint">Drag to turn · click a neighborhood or pizzeria to fly there · scroll or pinch to zoom · two-finger swipe, arrows or right-drag to move</div>
+      <div className="hint">Drag to turn · scroll to zoom · click a place to fly there</div>
       <Compass />
       <HoodBar hood={s.mode === 'hood' ? s.curHood : null} curPlace={s.curPlace} />
       <ReviewCard placeId={s.curPlace} />
