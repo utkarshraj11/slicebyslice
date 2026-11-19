@@ -1,26 +1,24 @@
 import { useEffect, useRef, useState } from 'react';
-import { createMap, type MapHandle } from '../engine/map';
+import { createMap, type MapHandle } from '../world/map';
 import { attachMap, mapView, openPlace, focusHood, tapBackground, stopTour, rotate, getState } from '../store';
 
-const TOD = ['☀ Day', '◐ Golden hour', '☾ Dusk'];
+const TOD = ['☀ Day', '◐ Dusk', '☾ Night'];
 
-/** The isometric map. React renders the empty <svg> shell once; the engine owns everything inside. */
+/** The map. React renders an empty host and overlay once; the engine (world/map.ts) owns the canvas, pins and labels. */
 export function MapView() {
-  const svg = useRef<SVGSVGElement>(null);
-  const scene = useRef<SVGGElement>(null), fog = useRef<SVGGElement>(null), sky = useRef<SVGGElement>(null), labels = useRef<SVGGElement>(null), pins = useRef<SVGGElement>(null);
-  /** time of day: a multiply-blended wash over the map (cheap: composited, no per-element filter) */
+  const host = useRef<HTMLDivElement>(null), overlay = useRef<HTMLDivElement>(null);
   const [tod, setTod] = useState(0);
   const map = useRef<MapHandle | null>(null), bar = useRef<HTMLDivElement>(null), barLabel = useRef<HTMLSpanElement>(null), pct = useRef<HTMLSpanElement>(null);
 
   useEffect(() => {
-    const m = createMap(svg.current!, { scene: scene.current!, fog: fog.current!, sky: sky.current!, labels: labels.current!, pins: pins.current! }, {
+    const m = createMap(host.current!, overlay.current!, {
       getView: mapView,
       onPin: id => { stopTour(); openPlace(id); },
       onHood: focusHood,
       onBackground: tapBackground,
       onUserMove: stopTour,
       onTurn: rotate,
-      // written straight to the DOM: this runs every camera frame
+      // written straight to the DOM: this runs on camera frames
       onScale: (m, px, z) => {
         bar.current!.style.width = px.toFixed(1) + 'px';
         barLabel.current!.textContent = m >= 1000 ? m / 1000 + ' km' : m + ' m';
@@ -35,29 +33,11 @@ export function MapView() {
     return () => { attachMap(null); map.current = null; m.destroy(); };
   }, []);
 
+  const nextTod = () => { const k = (tod + 1) % TOD.length; setTod(k); map.current?.setTime(k); };
   return (<>
-    <svg id="map" ref={svg} className="ov" xmlns="http://www.w3.org/2000/svg" aria-label="Isometric map of New York City and Hoboken pizza spots">
-      <defs>
-        <pattern id="cobble" width="9" height="6" patternUnits="userSpaceOnUse">
-          <rect width="9" height="6" fill="#d9d1c2" />
-          <ellipse cx="2.4" cy="1.6" rx="1.9" ry="1.1" fill="#cbc2b1" />
-          <ellipse cx="6.9" cy="4.6" rx="1.9" ry="1.1" fill="#cbc2b1" />
-        </pattern>
-        <pattern id="pavers" width="12" height="7" patternUnits="userSpaceOnUse">
-          <rect width="12" height="7" fill="#ece4d4" />
-          <path d="M0 3.5h12M6 0v3.5M0 7V3.5" stroke="#dcd2bf" strokeWidth=".8" fill="none" />
-        </pattern>
-      </defs>
-      <g id="world" stroke="#2e2b29" strokeWidth=".9" strokeLinejoin="round" strokeLinecap="round">
-        <g id="scene" ref={scene} stroke="#4f433d" strokeWidth=".6" />
-        <g id="fog" ref={fog} />
-        <g id="sky" ref={sky} />
-        <g id="labels" ref={labels} />
-        <g id="pins" ref={pins} />
-      </g>
-    </svg>
-    <div className={'tint tod' + tod} aria-hidden="true" />
-    <button className="todbtn" onClick={() => setTod((tod + 1) % TOD.length)} title="Change the light">{TOD[tod]}</button>
+    <div id="map" ref={host} role="application" aria-label="Isometric map of New York City and Hoboken pizza spots" />
+    <div className="overlay" ref={overlay} />
+    <button className="todbtn" onClick={nextTod} title="Change the light">{TOD[tod]}</button>
     <div className="scalebar" aria-hidden="true"><span ref={barLabel} /><div ref={bar} /></div>
     <div className="zoomctl" role="group" aria-label="Zoom">
       <button aria-label="Zoom in" title="Zoom in" onClick={() => map.current?.zoomBy(1 / 1.5)}>+</button>

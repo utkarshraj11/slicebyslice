@@ -2,8 +2,8 @@
    synchronously (the camera's framing depends on which panels are open at the moment it refits). */
 import { useSyncExternalStore } from 'react';
 import { PLACES, HOODS, TOUR, isHood, type HoodId } from './data/places';
-import type { MapHandle, MapView } from './engine/map';
-import { rotShowing, visibleAt } from './engine/iso';
+import type { MapHandle, MapView } from './world/map';
+import { rotShowing, visibleAt } from './world/compass';
 
 export interface State {
   mode: 'overview' | 'hood';

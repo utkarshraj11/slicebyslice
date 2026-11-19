@@ -1,31 +1,28 @@
 :root{--ink:#2e2b29;--paper:#f3efe5;--card:#fffaf1;--tomato:#d9473a;--muted:#7a7066;--soft:#efe7d8}
 *{box-sizing:border-box}
 html,body{margin:0;height:100%;background:var(--paper);color:var(--ink);font-family:'DM Sans',system-ui,-apple-system,sans-serif;overflow:hidden;-webkit-font-smoothing:antialiased}
-#map{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none;cursor:grab;user-select:none;-webkit-user-select:none}
+#map{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none;cursor:grab;user-select:none;-webkit-user-select:none;background:var(--map-bg,var(--paper))}
+#map canvas{display:block;image-rendering:pixelated}
+
+/* pins and neighbourhood labels, projected over the canvas by world/map.ts */
+.overlay{position:fixed;inset:0;pointer-events:none;z-index:2;overflow:hidden}
+.pin3{position:absolute;left:0;top:0;pointer-events:auto;border:0;background:none;padding:0;cursor:pointer;width:0;height:0;overflow:visible}
+.pin3 svg{position:absolute;left:-15px;top:-44px;overflow:visible;transition:transform .2s cubic-bezier(.3,1.6,.5,1);transform-origin:50% 100%}
+.pin3:hover svg,.pin3:focus-visible svg{transform:scale(1.18) translateY(-2px)}
+.pin3.active svg{transform:scale(1.3) translateY(-3px)}
+.pin3:focus-visible{outline:none}
+.pin3:focus-visible svg{filter:drop-shadow(0 0 0 2px var(--ink))}
+.pin3 .tag{position:absolute;left:14px;top:-50px;white-space:nowrap;background:var(--card);border:1.3px solid var(--ink);border-radius:999px;padding:2px 9px;font:700 11px/1.4 'DM Sans',sans-serif;color:var(--ink);opacity:0;transition:opacity .25s;pointer-events:none}
+.overlay.near .pin3 .tag,.pin3.active .tag,.pin3:hover .tag{opacity:1}
+.hlabel{position:absolute;left:0;top:0;pointer-events:auto;display:none;grid-template-columns:auto auto;column-gap:7px;align-items:center;text-align:left;translate:-50% 0;background:var(--card);border:1.5px solid var(--ink);border-radius:999px;padding:6px 14px 6px 10px;box-shadow:2px 2px 0 var(--ink);cursor:pointer;color:var(--ink)}
+.overlay.ov .hlabel{display:grid}
+.hlabel:hover{background:#fff}
+.hlabel i{grid-row:span 2;width:11px;height:11px;border-radius:50%;border:1.2px solid var(--ink)}
+.hlabel b{font:800 14px/1.1 Fraunces,Georgia,serif}
+.hlabel small{font:500 10px/1.2 'DM Sans',sans-serif;color:#7a7066}
 #map.dragging{cursor:grabbing}
 #grain{position:fixed;inset:0;pointer-events:none;mix-blend-mode:multiply;opacity:.55}
 
-/* scene */
-.tile .lift{animation:drop .9s cubic-bezier(.2,.9,.25,1) backwards;transition:transform .35s cubic-bezier(.2,.8,.2,1)}
-@keyframes drop{from{transform:translateY(-70px);opacity:0}to{transform:none;opacity:1}}
-#map.ov .tile.hood{cursor:pointer}
-#map.ov .tile.hood:hover .lift{transform:translateY(-10px)}
-.wave{animation:shimmer 4s ease-in-out infinite}
-@keyframes shimmer{0%,100%{opacity:.95}50%{opacity:.25}}
-.pin{cursor:pointer;outline:none}
-.pin .pbody{transform-box:fill-box;transform-origin:50% 100%;transition:transform .2s cubic-bezier(.3,1.6,.5,1)}
-.pin:hover .pbody,.pin:focus-visible .pbody{transform:scale(1.18) translateY(-2px)}
-.pin.active .pbody{transform:scale(1.22) translateY(-3px)}
-.pin .ring{opacity:0}
-.pin.active .ring{opacity:1;animation:ring 1.6s ease-out infinite;transform-box:fill-box;transform-origin:50% 50%}
-@keyframes ring{from{transform:scale(.6);opacity:.9}to{transform:scale(2.2);opacity:0}}
-.pin .tag{opacity:0;transition:opacity .25s;pointer-events:none}
-#map.near .pin .tag{opacity:1}
-.pins-in{animation:pinin .6s cubic-bezier(.3,1.5,.5,1) backwards}
-@keyframes pinin{from{opacity:0;transform:translateY(-30px)}to{opacity:1;transform:none}}
-.tlabel{cursor:pointer}
-.tlabel rect{transition:fill .2s}
-.tlabel:hover rect.lb{fill:#fff}
 
 /* chrome */
 header{position:fixed;left:12px;top:10px;max-width:400px;pointer-events:none;z-index:5;padding:12px 16px 14px;border-radius:18px;border:1.5px solid transparent;transition:background .3s,box-shadow .3s,border-color .3s}
@@ -34,23 +31,8 @@ header{position:fixed;left:12px;top:10px;max-width:400px;pointer-events:none;z-i
 .app.zoomed header h1{font-size:30px;margin-bottom:0}
 .app.zoomed header .kicker{font-size:10.5px}
 @media (min-width:761px){.app.panel-open .hoodbar{left:calc((100vw - 434px)/2)}}
-#fog{pointer-events:none}#fog .fog{fill:var(--paper);opacity:.9}
-#sky{transition:opacity .6s}
-#map.near #sky{opacity:0}
-#map #world{transition:opacity .17s}
-#map.turning #world{opacity:0}
-#map.no-intro .tile .lift,#map.no-intro .pins-in{animation:none}
-/* distance from the open pizzeria: solid pale "context" massing (no see-through clutter), the farthest also fades */
-.objs > g{transition:opacity .35s,filter .35s}
-.objs > g.f1{filter:grayscale(.5) sepia(.4) brightness(1.08) contrast(.85)}
-.objs > g.f2{filter:grayscale(1) sepia(.65) brightness(1.18) contrast(.55)}
-.objs > g.f3{filter:grayscale(1) sepia(.65) brightness(1.25) contrast(.42);opacity:.5}
-.objs > g.xray,.bridge.xray{opacity:.14}
 
 /* scale bar + zoom */
-.tint{position:fixed;inset:0;pointer-events:none;z-index:1;mix-blend-mode:multiply;opacity:0;transition:opacity .6s,background .6s}
-.tint.tod1{background:#ffcf96;opacity:.38}
-.tint.tod2{background:#5d63a8;opacity:.5}
 .todbtn{position:fixed;right:22px;bottom:200px;z-index:5;background:var(--card);border:1.5px solid var(--ink);border-radius:999px;padding:6px 12px;box-shadow:2px 2px 0 var(--ink);font:600 12px/1 'DM Sans',sans-serif;color:var(--ink);cursor:pointer}
 .todbtn:hover{background:var(--soft)}
 .scalebar{position:fixed;left:20px;bottom:42px;z-index:4;pointer-events:none;background:rgba(243,239,229,.85);padding:5px 7px 6px;border-radius:6px;font:600 11px/1 'DM Sans',sans-serif;color:var(--muted);letter-spacing:.04em}
@@ -133,6 +115,7 @@ header p{margin:0;font-size:14.5px;line-height:1.45;color:#4d463f;max-width:340p
 .hoodbar button:hover,.hoodbar button.on{background:var(--tomato);color:#fff}
 
 @media (max-width:760px){
+  .hlabel{padding:4px 10px 4px 8px;column-gap:5px}.hlabel b{font-size:12px}.hlabel small{display:none}.hlabel i{grid-row:auto;width:8px;height:8px}
   header{left:16px;top:14px;right:16px}
   header h1{font-size:30px}
   header p{font-size:13px}
@@ -161,4 +144,4 @@ header p{margin:0;font-size:14.5px;line-height:1.45;color:#4d463f;max-width:340p
 .lg1,.lg2{transform-box:fill-box;transform-origin:50% 0;transform:rotate(-20deg)}
 .lg2,.st .lg1{transform:rotate(20deg)}
 .st .lg2{transform:rotate(-20deg)}
-@media (prefers-reduced-motion:reduce){.tile .lift,.pins-in{animation:none}.wave{animation:none}}
+@media (prefers-reduced-motion:reduce){.pin3 svg{transition:none}}
