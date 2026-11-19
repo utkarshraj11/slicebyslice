@@ -2,7 +2,7 @@ import { Tile } from '../tile';
 import { C_GRASS, iso, f1, box } from '../iso';
 
 export function buildLiberty(): Tile {
-  const t=new Tile('liberty',116,36,6,{thick:.7,slab:C_GRASS,top:4});
+  const t=new Tile('liberty',116,36,6,{slab:C_GRASS,top:4});
   t.flat([[1.2,2.2],[2.2,1.2],[3.8,1.2],[4.8,2.2],[4.8,3.8],[3.8,4.8],[2.2,4.8],[1.2,3.8]],'#e3dccc');
   t.tree(.6,.7,.8); t.tree(5.3,.8,.8); t.tree(.7,5.3,.8);
   const X=t.X(2.5),Y=t.Y(2.5);

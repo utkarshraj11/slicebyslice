@@ -1,7 +1,7 @@
 /* Building parts, street furniture, people and vehicles, all as SVG strings. */
 import {
   type Axis, type Face, type Dir, INK, C_WIN, TREES, SHIRTS, PANTS, SKIN, HAIR, S,
-  rnd, pick, iso, f1, poly, ln, mixc, lt, dk, box, face, faceL, faceR, frect, ftext, cyl, cone, gableRoof,
+  rnd, rr, pick, iso, f1, poly, ln, mixc, lt, dk, box, face, faceL, faceR, frect, ftext, cyl, cone, gableRoof,
 } from './iso';
 import type { Style, Ground } from './styles';
 
@@ -133,15 +133,26 @@ export function houseSVG(x: number, y: number, w: number, d: number, h: number, 
 }
 
 /* --- street furniture & life --- */
+/** Crown of overlapping leaf clusters: darker low and behind, lighter on top, outlined in a deep shade of the leaf colour. */
+const CROWN = [[-0.5, 0.18, 0.46, 0.2], [0.5, 0.22, 0.44, 0.16], [0, 0.34, 0.48, 0.1], [-0.36, -0.3, 0.48, 0.02], [0.36, -0.26, 0.46, 0], [0, -0.68, 0.4, -0.12]];
+const CROWN_S = [[-0.42, 0.12, 0.52, 0.16], [0.42, 0.16, 0.5, 0.1], [0, -0.4, 0.56, 0]];
 export function treeSVG(x: number, y: number, s = 1, c?: string) {
   c = c || pick(TREES);
-  const b = iso(x, y, 0), t = iso(x, y, 1.05 * s), R = 0.55 * S * s;
-  return `<ellipse cx="${f1(b[0])}" cy="${f1(b[1])}" rx="${f1(R * 0.95)}" ry="${f1(R * 0.45)}" fill="rgba(70,55,30,.13)" stroke="none"/>` +
-    ln(b, [t[0], t[1] + R * 0.25], '#7a5236', 2.6 * s) +
-    `<circle cx="${f1(t[0] - R * 0.45)}" cy="${f1(t[1] + R * 0.05)}" r="${f1(R * 0.62)}" fill="${dk(c, 0.1)}"/>` +
-    `<circle cx="${f1(t[0] + R * 0.42)}" cy="${f1(t[1] + R * 0.1)}" r="${f1(R * 0.6)}" fill="${dk(c, 0.05)}"/>` +
-    `<circle cx="${f1(t[0])}" cy="${f1(t[1] - R * 0.35)}" r="${f1(R * 0.72)}" fill="${c}"/>` +
-    `<circle cx="${f1(t[0] - R * 0.22)}" cy="${f1(t[1] - R * 0.6)}" r="${f1(R * 0.24)}" fill="${lt(c, 0.3)}" stroke="none"/>`;
+  const b = iso(x, y, 0), t = iso(x, y, 1.1 * s), R = 0.6 * S * s, o = dk(c, 0.42);
+  let out = `<ellipse cx="${f1(b[0])}" cy="${f1(b[1])}" rx="${f1(R * 0.95)}" ry="${f1(R * 0.45)}" fill="rgba(70,55,30,.13)" stroke="none"/>` +
+    ln(b, [t[0], t[1] + R * 0.3], '#7a5236', 2.4 * s);
+  // clusters batched into a back (darker) and a front path, plus one highlight path: ~5 elements a tree,
+  // which matters with ~400 street trees (each element is repainted every frame)
+  const circ = (x: number, y: number, r: number) => `M${f1(x - r)} ${f1(y)}a${f1(r)} ${f1(r)} 0 1 0 ${f1(2 * r)} 0a${f1(r)} ${f1(r)} 0 1 0 ${f1(-2 * r)} 0`;
+  let back = '', front = '', hi = '';
+  const crown = s < 0.7 ? CROWN_S : CROWN;
+  for (const [dx, dy, r, k] of crown) {
+    const cx = t[0] + (dx + rr(-0.06, 0.06)) * R, cy = t[1] + (dy + rr(-0.05, 0.05)) * R;
+    if (k > 0.05) back += circ(cx, cy, r * R); else front += circ(cx, cy, r * R);
+    if (k <= 0.02) hi += circ(cx - r * R * 0.3, cy - r * R * 0.35, r * R * 0.3);
+  }
+  out += `<path d="${back}" fill="${dk(c, 0.15)}" stroke="${o}" stroke-width=".8"/><path d="${front}" fill="${c}" stroke="${o}" stroke-width=".8"/><path d="${hi}" fill="${lt(c, 0.32)}" stroke="none"/>`;
+  return out;
 }
 export function lampSVG(x: number, y: number) {
   const b = iso(x, y, 0), t = iso(x, y, 1.45);
@@ -151,38 +162,52 @@ export const benchSVG = (x: number, y: number, axis: Axis) =>
   axis === 'x' ? box(x - 0.35, y - 0.11, 0, 0.7, 0.22, 0.22, '#a2724a') : box(x - 0.11, y - 0.35, 0, 0.22, 0.7, 0.22, '#a2724a');
 export const hydrantSVG = (x: number, y: number) => cyl(x, y, 0, 0.07, 0.24, '#d9473a', '#e86a5c', 'stroke-width=".6"');
 
-export interface PersonOpts { shirt?: string; pants?: string; skin?: string; hair?: string }
+export interface PersonOpts { shirt?: string; pants?: string; skin?: string; hair?: string; walking?: boolean }
+/** A person ~5½ ft tall (≈ 0.45 units; drawn a touch taller to stay readable): legs, torso, arms, head. Pixel sprite. */
 export function personSVG(o: PersonOpts = {}) {
   const shirt = o.shirt || pick(SHIRTS), pants = o.pants || pick(PANTS), skin = o.skin || pick(SKIN), hair = o.hair || pick(HAIR);
-  return `<ellipse cx="0" cy="0" rx="3.4" ry="1.5" fill="rgba(0,0,0,.13)" stroke="none"/>` +
-    `<path d="M-1.5 -.4L-1.3 -6.6M1.5 -.4L1.3 -6.6" stroke="${pants}" stroke-width="2.2"/>` +
-    `<rect x="-2.9" y="-13.6" width="5.8" height="8.2" rx="2.4" fill="${shirt}" stroke-width=".7"/>` +
-    `<circle cx="0" cy="-16.4" r="2.8" fill="${skin}" stroke-width=".7"/>` +
-    `<path d="M-2.85 -16.6a2.85 2.85 0 0 1 5.7 0z" fill="${hair}" stroke="none"/>`;
+  const lg = (x: number, k: number) => `<path${o.walking ? ` class="lg${k}"` : ''} d="M${x} -4.6L${x} -.4" stroke="${pants}" stroke-width="1.5"/>`;
+  return `<ellipse cx="0" cy="0" rx="2.3" ry="1" fill="rgba(0,0,0,.14)" stroke="none"/>` + lg(-0.75, 1) + lg(0.75, 2) +
+    `<path d="M-1.9 -8.2L-2.3 -4.9M1.9 -8.2L2.3 -4.9" stroke="${shirt}" stroke-width="1.1"/>` +
+    `<circle cx="-2.3" cy="-4.6" r=".55" fill="${skin}" stroke="none"/><circle cx="2.3" cy="-4.6" r=".55" fill="${skin}" stroke="none"/>` +
+    `<rect x="-1.9" y="-9.1" width="3.8" height="5" rx="1.2" fill="${shirt}" stroke-width=".5"/>` +
+    `<circle cx="0" cy="-10.9" r="1.75" fill="${skin}" stroke-width=".5"/>` +
+    `<path d="M-1.8 -11a1.8 1.8 0 0 1 3.6 0z" fill="${hair}" stroke="none"/>`;
 }
 
 export interface CarOpts { len?: number; bus?: boolean; taxi?: boolean; z?: number; onTop?: boolean }
+/** Real proportions: a car is ~15½ × 6¼ ft (1.25 × 0.5 units), a city bus 40 × 8½ ft. */
+export const carLen = (o: CarOpts) => o.len || (o.bus ? 3.2 : 1.25);
+export const carWidth = (o: CarOpts) => (o.bus ? 0.68 : 0.5);
+/** A car or bus centred on the origin, long side along `axis`. Wheels sit on the visible long side only. */
 export function carSVG(axis: Axis, color: string, o: CarOpts = {}) {
-  const L = o.len || 1.5, Wd = 0.78, [w, d] = axis === 'x' ? [L, Wd] : [Wd, L];
-  let s = `<ellipse cx="0" cy="3" rx="${axis === 'x' ? 20 : 16}" ry="7" fill="rgba(0,0,0,.12)" stroke="none"/>`;
-  s += box(-w / 2, -d / 2, 0.14, w, d, 0.36, color);
+  const L = carLen(o), Wd = carWidth(o), [w, d] = axis === 'x' ? [L, Wd] : [Wd, L], z0 = 0.08;
+  const sh = 0.05, fp = [[-w / 2 - sh, -d / 2 - sh], [w / 2 + sh, -d / 2 - sh], [w / 2 + sh, d / 2 + sh], [-w / 2 - sh, d / 2 + sh]].map(([x, y]) => iso(x, y, 0));
+  let s = poly(fp, 'rgba(0,0,0,.14)', 'stroke="none"');
+  const longSides = (axis === 'x' ? ['W', 'E'] : ['N', 'S']) as Dir[];
   if (o.bus) {
-    s = `<ellipse cx="0" cy="3" rx="28" ry="10" fill="rgba(0,0,0,.12)" stroke="none"/>` + box(-w / 2, -d / 2, 0.14, w, d, 0.9, color, { top: '#f4f4f4' });
-    for (const dir of (axis === 'x' ? ['W', 'E'] : ['S', 'N']) as Dir[]) {
-      const F = face(-w / 2, -d / 2, 0.14, w, d, dir);
-      for (let u = 0.25; u < F.L - 0.3; u += 0.42) s += frect(F, u, 0.42, u + 0.32, 0.72, '#bfd9ea', 'stroke-width=".5"');
-      s += frect(F, 0.1, 0.12, F.L - 0.1, 0.24, '#3f7fbf', 'stroke="none"');
+    const h = 0.95;
+    s += box(-w / 2, -d / 2, z0, w, d, h, color, { top: '#f4f4f4' });
+    for (const dir of longSides) {
+      const F = face(-w / 2, -d / 2, z0, w, d, dir);
+      for (let u = 0.3; u < F.L - 0.3; u += 0.42) s += frect(F, u, 0.42, u + 0.32, 0.78, '#bfd9ea', 'stroke-width=".5"');
+      s += frect(F, 0.1, 0.14, F.L - 0.1, 0.26, '#3f7fbf', 'stroke="none"');
     }
   } else {
-    const cw = axis === 'x' ? 0.78 : Wd * 0.84, cd = axis === 'x' ? Wd * 0.84 : 0.78;
-    s += box(-cw / 2 - (axis === 'x' ? 0.1 : 0), -cd / 2 - (axis === 'y' ? 0.1 : 0), 0.5, cw, cd, 0.27, color, { L: '#bcd8ea', R: '#a7c7de', top: lt(color, 0.2) });
-    if (o.taxi) { const p = iso(-(axis === 'x' ? 0.1 : 0), -(axis === 'y' ? 0.1 : 0), 0.8); s += `<rect x="${f1(p[0] - 3)}" y="${f1(p[1] - 3)}" width="6" height="3" rx="1" fill="#fff8d8" stroke-width=".6"/>`; }
+    s += box(-w / 2, -d / 2, z0, w, d, 0.24, color, { top: lt(color, 0.12) });
+    // cabin: shorter and a little narrower, set back from the bonnet; glass on its sides
+    const cl = L * 0.56, cw = Wd * 0.86, off = -L * 0.06;
+    const [cx, cy, cW, cD] = axis === 'x' ? [off - cl / 2, -cw / 2, cl, cw] : [-cw / 2, off - cl / 2, cw, cl];
+    s += box(cx, cy, z0 + 0.24, cW, cD, 0.2, color, { top: lt(color, 0.2) });
+    for (const dir of ['N', 'E', 'S', 'W'] as Dir[]) { const F = face(cx, cy, z0 + 0.24, cW, cD, dir); s += frect(F, 0.05, 0.03, F.L - 0.05, 0.17, '#bcd8ea', 'stroke-width=".4"'); }
+    if (o.taxi) { const p = iso(axis === 'x' ? off : 0, axis === 'y' ? off : 0, z0 + 0.5); s += `<rect x="${f1(p[0] - 2)}" y="${f1(p[1] - 2)}" width="4" height="2" rx=".6" fill="#fff8d8" stroke-width=".5"/>`; }
   }
-  // the three wheels nearest the viewer (largest screen y)
-  const ins = 0.32, wheels = (axis === 'x'
-    ? [[-w / 2 + ins, d / 2], [w / 2 - ins, d / 2], [-w / 2 + ins, -d / 2], [w / 2 - ins, -d / 2]]
-    : [[w / 2, -d / 2 + ins], [w / 2, d / 2 - ins], [-w / 2, -d / 2 + ins], [-w / 2, d / 2 - ins]]).map(([x, y]) => iso(x, y, 0.14));
-  for (const p of wheels.sort((a, b) => b[1] - a[1]).slice(0, 3)) s += `<ellipse cx="${f1(p[0])}" cy="${f1(p[1])}" rx="2.6" ry="2.6" fill="#2b2a2a" stroke="none"/>`;
+  // wheels on whichever long side faces the viewer, half below the body
+  for (const dir of longSides) {
+    const F = face(-w / 2, -d / 2, z0, w, d, dir); if (F.hidden) continue;
+    const ins = o.bus ? 0.5 : 0.24;
+    for (const u of [ins, F.L - ins]) { const p = F.at(u, 0.02, 0.01); s += `<circle cx="${f1(p[0])}" cy="${f1(p[1])}" r="${o.bus ? 2.6 : 1.9}" fill="#2b2a2a" stroke="none"/><circle cx="${f1(p[0])}" cy="${f1(p[1])}" r=".7" fill="#9a958d" stroke="none"/>`; }
+  }
   return s;
 }
 export function boatSVG(kind: 'ferry' | 'tour' | 'tug') {

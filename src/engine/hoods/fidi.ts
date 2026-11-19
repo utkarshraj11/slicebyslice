@@ -23,7 +23,7 @@ export function buildFidi(): Tile {
   t.road(0, 1.2, W, 1.2, 'x', { line: false, name: 'South St', nameAt: 0.7 });
   t.road(12.0, 2.4, 1.2, D - 2.4, 'y', { line: false, name: 'Wall St', nameAt: 0.55, fill: '#d9d2c6' });
   for (const [y, name, w] of [[5.6, 'Water St', 1.2], [12.6, 'Pearl St', 1.0], [20.8, 'William St', 1.0], [30.0, 'Broad St', 1.4]] as const)
-    t.road(0, y, W, w, 'x', { line: false, name: name === 'Broad St' ? 'Broad St · Nassau St' : name, nameAt: 0.82 });
+    t.road(name === 'Broad St' || name === 'Pearl St' ? 4.0 : 0, y, name === 'Broad St' || name === 'Pearl St' ? W - 4.0 : W, w, 'x', { line: false, name: name === 'Broad St' ? 'Broad St · Nassau St' : name, nameAt: 0.82 });
   t.road(18.4, 2.4, 1.0, 27.6, 'y', { line: false, name: 'Beaver St', nameAt: 0.5 });
   t.road(4.0, 10.2, 1.0, 19.8, 'y', { line: false, name: 'Pine St', nameAt: 0.5 });
   t.xwalk(11.4, 20.8, 0.5, 1.0); t.xwalk(13.3, 20.8, 0.5, 1.0); t.xwalk(11.4, 12.6, 0.5, 1.0); t.xwalk(13.3, 12.6, 0.5, 1.0); t.xwalk(12.0, 29.4, 1.2, 0.5);
@@ -53,7 +53,7 @@ export function buildFidi(): Tile {
   t.b(20.0, 21.8, 3.6, 2.6, 1.3 + 7 * 0.92 + 0.12, '#c48a5a', { style: 'prewar', floors: 8, g0: 1.3, fh: 0.92, fronts: 'NW', ground: 'shop', key: "DELMONICO'S" });
   t.face(side(F['BEAVER STREET'], 2, 30), 'N', 20.0, 24.6, 29.6, { depth: 3.0, fit: true });
   t.face(side(F['BEAVER STREET'], 1, 31), 'S', 17.8, 24.6, 29.6, { depth: 3.0, fit: true });
-  t.b(20.0, 2.6, 3.8, 10.4, 1.3 + 15 * 0.8 + 0.12, '#a9c3d6', { style: 'modern', floors: 16, g0: 1.3, fh: 0.8, key: 'WATER ST TOWER' });
+  t.b(20.0, 2.6, 3.8, 9.8, 1.3 + 15 * 0.8 + 0.12, '#a9c3d6', { style: 'modern', floors: 16, g0: 1.3, fh: 0.8, key: 'WATER ST TOWER' });
 
   /* ---------- north of Pine St, the bridge ---------- */
   anchorage(t, 'manhattan');
@@ -68,8 +68,8 @@ export function buildFidi(): Tile {
   t.cart(13.0, 23.4, ['#f2c230', '#d9473a']);
   t.lamp(11.6, 21.6); t.lamp(13.6, 12.4); t.hydrant(13.6, 5.4);
   t.car('x', W, 0, 1.6, 1.2, '#f4c430', { taxi: true }); t.car('x', 0, W, 2.0, 1.1, '#2f3a48');
-  t.car('x', W, 0, 13.1, 1.0, '#e8e4dc'); t.car('x', 0, W, 30.5, 1.1, '#f4c430', { taxi: true });
-  t.walker('y', 2.6, D - 0.4, 11.6, 0.4); t.walker('y', 2.6, D - 0.4, 13.6, 0.45); t.walker('x', 0.3, W - 0.3, 0.5, 0.5);
+  t.car('x', W, 4.8, 13.1, 1.0, '#e8e4dc'); t.car('x', 4.8, W, 30.5, 1.1, '#f4c430', { taxi: true });
+  t.walker('y', 2.6, 25.9, 11.6, 0.4); t.walker('y', 2.6, D - 0.4, 13.6, 0.45); t.walker('x', 0.3, W - 0.3, 0.5, 0.5);
   return t;
 }
 

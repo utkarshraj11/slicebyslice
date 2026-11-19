@@ -53,8 +53,8 @@ export function buildDumbo(): Tile {
   for (let i = 0; i < 9; i++) t.person(14.0 - i * 0.45, 16.35);      // Grimaldi's line up Old Fulton St
   t.queue(7.5, 12.4, 'y', 4, 0.45);                                  // Ignazio's
   t.lamp(5.6, 12.0); t.lamp(7.6, 8.0); t.lamp(16.4, 12.6); t.hydrant(7.6, 15.6);
-  t.parked(17.6, 9.4, 'y', '#5aa469');
-  t.car('y', 0, 16.6, 17.6, 1.1, '#f4c430', { taxi: true }); t.car('x', W, 0, 17.2, 1.0, '#d9473a');
+  t.parked(17.95, 9.4, 'y', '#5aa469');
+  t.car('y', 0, 16.6, 17.4, 1.1, '#f4c430', { taxi: true }); t.car('x', W, 0, 17.2, 1.0, '#d9473a');
   t.walker('y', 0.4, 16.2, 5.5, 0.4); t.walker('y', 0.4, 16.2, 5.5, 0.5); t.walker('x', 0.4, 16.4, 16.3, 0.45); t.walker('y', 0.4, 16, 7.5, 0.4);
   return t;
 }

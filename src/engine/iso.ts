@@ -10,8 +10,8 @@ export type Dir = 'N' | 'E' | 'S' | 'W';
 
 export const S = 22, CX = Math.cos(Math.PI / 6), HY = 0.5;
 export const INK = '#2e2b29';
-export const C_TILE = '#f1ece2', C_ROAD = '#dcd6ca', C_LINE = '#e8bb4f', C_GRASS = '#b6d98f', C_WATER = '#a7d0ec', C_WIN = '#cfe2ee', C_STONE = '#cdb99a';
-export const TREES = ['#86b96a', '#7aae5f', '#93c374', '#8fbf6a'];
+export const C_TILE = '#f1ece2', C_ROAD = '#d8d0c2', C_LINE = '#e8bb4f', C_GRASS = '#b6d98f', C_WATER = '#94d0cd', C_WIN = '#cfe2ee', C_STONE = '#cdb99a';
+export const TREES = ['#8fc36a', '#a5cf6c', '#7fb862', '#b3d575', '#98c96f'];
 export const SHIRTS = ['#d94a3a', '#3f7fbf', '#f2c230', '#5aa469', '#8e6cc2', '#f08a4b', '#2f3a48', '#ece4d5', '#e07aa0', '#58b5c9', '#c0392b', '#ffffff'];
 export const PANTS = ['#2f3a48', '#3d4f7a', '#5a4636', '#6b6f78', '#22303c', '#7a8a9a'];
 export const SKIN = ['#f3cfb1', '#e3b08c', '#c68b62', '#9a6544', '#6e4630', '#f1d4c0'];

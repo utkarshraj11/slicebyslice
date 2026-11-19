@@ -2,9 +2,9 @@
    rebuilds the scene when the view rotates, and x-rays whatever stands in front of the open pizzeria.
    UI state lives outside (store.ts); the map reads it through `getView` and reports taps via callbacks. */
 import type { HoodId } from '../data/places';
-import { type Dir, iso, iso0, rot, f1, setRot, getRot } from './iso';
+import { type Dir, S, iso, iso0, rot, f1, setRot, getRot } from './iso';
 import { mountScene, moverIndex, tileCorners, type Scene, type SceneLayers, type TopItem } from './scene';
-import type { Tile, Mover, Item } from './tile';
+import type { Tile, Mover, Item, AABB } from './tile';
 
 export interface MapView { mode: 'overview' | 'hood'; curHood: HoodId | null; curPlace: string | null; panelOpen: boolean }
 export interface MapCallbacks {
@@ -14,6 +14,10 @@ export interface MapCallbacks {
   onBackground(): void;
   /** user dragged / zoomed / tapped: stop the tour */
   onUserMove(): void;
+  /** mouse drag turned the view a quarter turn (+1 / -1) */
+  onTurn(dir: number): void;
+  /** camera changed: a round scale-bar length, its width on screen, and zoom (100% = 1 SVG unit per pixel) */
+  onScale(metres: number, px: number, pct: number): void;
 }
 export interface MapHandle {
   refit(dur?: number): void;
@@ -23,9 +27,14 @@ export interface MapHandle {
   setRotation(k: number): Promise<void>;
   /** Compass side a pizzeria's storefront faces. */
   facing(id: string): Dir;
+  zoomBy(f: number): void;
   destroy(): void;
 }
 interface Cam { cx: number; cy: number; w: number }
+/** One world unit is 12.5 ft (FT = 0.08). Approximate: wide lots and long stretches are compressed. */
+const M_PER_UNIT = 3.81;
+/** Opacity by distance band from the open pizzeria (see fadeLevel). */
+const FADE_OP = [1, 0.85, 0.7, 0.45]; // movers can't take the CSS wash, so they only fade
 interface Bounds { x0: number; x1: number; y0: number; y1: number }
 
 export function createMap(svg: SVGSVGElement, layers: SceneLayers, cb: MapCallbacks, initialRot = 0): MapHandle {
@@ -72,6 +81,8 @@ export function createMap(svg: SVGSVGElement, layers: SceneLayers, cb: MapCallba
     for (const o of sc.pinObjs) o.node.setAttribute('transform', `translate(${f1(o.sx)},${f1(o.sy)}) scale(${ps.toFixed(3)})`);
     for (const o of sc.labelObjs) o.node.setAttribute('transform', `translate(${f1(o.sx)},${f1(o.sy)}) scale(${ls.toFixed(3)})`);
     svg.classList.toggle('near', k < 1.25);
+    const pxPerM = S / k / M_PER_UNIT, m = [5, 10, 20, 50, 100, 200, 500, 1000, 2000].find(m => m * pxPerM >= 48) ?? 5000;
+    cb.onScale(m, m * pxPerM, Math.round(100 / k));
   }
   const flyTo = (to: Cam, dur = 1250) => { camAnim = { from: { ...cam }, to, t0: performance.now(), dur }; };
   function stepCam(now: number) {
@@ -113,9 +124,25 @@ export function createMap(svg: SVGSVGElement, layers: SceneLayers, cb: MapCallba
     }
   }
 
-  /* ---------- pointer: pan, pinch, tap ---------- */
+  /* ---------- fade: buildings far from the open pizzeria fade out, so its block reads clearly ---------- */
+  let fadeAt: [number, number] | null = null;
+  function fadeLevel(b: AABB) {
+    if (!fadeAt) return 0;
+    const d = Math.hypot(Math.max(b.x0 - fadeAt[0], 0, fadeAt[0] - b.x1), Math.max(b.y0 - fadeAt[1], 0, fadeAt[1] - b.y1));
+    return d < 6 ? 0 : d < 10 ? 1 : d < 15 ? 2 : 3;
+  }
+  function fade() {
+    const info = activeId ? sc.pins[activeId] : null;
+    fadeAt = info ? rot(info.at[0], info.at[1]) : null;
+    for (const t of sc.tiles) for (const it of t.sorted) {
+      const n = it.node!, f = fadeLevel(it);
+      for (let i = 1; i < 4; i++) n.classList.toggle('f' + i, i === f);
+    }
+  }
+
+  /* ---------- pointer: drag to turn (mouse) or pan (touch, shift / right-drag), pinch, tap ---------- */
   const ptrs = new Map<number, { x: number; y: number }>();
-  let drag: { x: number; y: number; cx: number; cy: number; target: EventTarget | null } | null = null;
+  let drag: { x: number; y: number; cx: number; cy: number; target: EventTarget | null; turn: boolean; tx: number } | null = null;
   let pinch: { d: number; w: number; m: [number, number] } | null = null, moved = false;
   const toWorld = (px: number, py: number): [number, number] => [cam.cx + ((px - W / 2) * cam.w) / W, cam.cy + ((py - H / 2) * cam.w) / W];
 
@@ -130,7 +157,7 @@ export function createMap(svg: SVGSVGElement, layers: SceneLayers, cb: MapCallba
   }
   const onDown = (e: PointerEvent) => {
     ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
-    if (ptrs.size === 1) { drag = { x: e.clientX, y: e.clientY, cx: cam.cx, cy: cam.cy, target: e.target }; moved = false; }
+    if (ptrs.size === 1) { drag = { x: e.clientX, y: e.clientY, cx: cam.cx, cy: cam.cy, target: e.target, turn: e.pointerType === 'mouse' && e.button === 0 && !e.shiftKey, tx: e.clientX }; moved = false; }
     else if (ptrs.size === 2) { const [a, b] = [...ptrs.values()]; pinch = { d: Math.hypot(a.x - b.x, a.y - b.y) || 1, w: cam.w, m: toWorld((a.x + b.x) / 2, (a.y + b.y) / 2) }; moved = true; }
   };
   const onMove = (e: PointerEvent) => {
@@ -143,6 +170,7 @@ export function createMap(svg: SVGSVGElement, layers: SceneLayers, cb: MapCallba
     if (drag) {
       const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
       if (!moved && Math.hypot(dx, dy) > 6) { moved = true; try { svg.setPointerCapture(e.pointerId); } catch { /* ignore */ } svg.classList.add('dragging'); cb.onUserMove(); }
+      if (moved && drag.turn) { const d = e.clientX - drag.tx; if (Math.abs(d) > 110) { drag.tx = e.clientX; cb.onTurn(d > 0 ? 1 : -1); } return; }
       if (moved) { camAnim = null; cam.cx = drag.cx - (dx * cam.w) / W; cam.cy = drag.cy - (dy * cam.w) / W; applyCam(); }
     }
   };
@@ -156,12 +184,14 @@ export function createMap(svg: SVGSVGElement, layers: SceneLayers, cb: MapCallba
     const f = Math.exp(e.deltaY * (e.ctrlKey ? 0.012 : 0.0016)); const m = toWorld(e.clientX, e.clientY);
     cam.w = Math.min(maxW(), Math.max(minW(), cam.w * f)); cam.cx = m[0] - ((e.clientX - W / 2) * cam.w) / W; cam.cy = m[1] - ((e.clientY - H / 2) * cam.w) / W; applyCam();
   };
+  const noMenu = (e: Event) => e.preventDefault(); // right-drag pans
   const onResize = () => { W = innerWidth; H = innerHeight; Object.assign(cam, targetFor()); camAnim = null; applyCam(); };
   svg.addEventListener('pointerdown', onDown);
   svg.addEventListener('pointermove', onMove);
   svg.addEventListener('pointerup', onUp);
   svg.addEventListener('pointercancel', onUp);
   svg.addEventListener('wheel', onWheel, { passive: false });
+  svg.addEventListener('contextmenu', noMenu);
   window.addEventListener('resize', onResize);
 
   /* ---------- animation loop ---------- */
@@ -174,12 +204,14 @@ export function createMap(svg: SVGSVGElement, layers: SceneLayers, cb: MapCallba
     const wx = x0 + (m.axis === 'x' ? along : m.c), wy = y0 + (m.axis === 'y' ? along : m.c);
     const [vx, vy] = rot(wx, wy), odd = getRot() % 2 === 1;
     const s = iso0(vx, vy, m.z || 0);
-    const bob = m.kind === 'walk' ? -Math.abs(Math.sin(time * 7 + m.phase!)) * 1.3 : 0;
+    const bob = m.kind === 'walk' ? -Math.abs(Math.sin(time * 9 + m.phase!)) * 0.6 : 0;
     const node = m.node as SVGGElement;
     node.setAttribute('transform', `translate(${f1(s[0])},${f1(s[1] + bob)})`);
-    if (m.kind !== 'walk') node.style.opacity = op < 1 ? op.toFixed(2) : '';
+    if (m.kind === 'walk') { const st = Math.sin(time * 9 + m.phase!) > 0; if (st !== m.st) { m.st = st; node.classList.toggle('st', st); } }
     const hw = odd ? m.hd : m.hw, hd = odd ? m.hw : m.hd;
     m.x0 = vx - hw; m.x1 = vx + hw; m.y0 = vy - hd; m.y1 = vy + hd;
+    op *= FADE_OP[fadeLevel(m)];
+    node.style.opacity = op < 1 ? op.toFixed(2) : '';
     const idx = moverIndex(m, list);
     if (idx !== m.idx) { m.idx = idx; parent.insertBefore(node, list[idx]?.node ?? null); }
   }
@@ -213,7 +245,7 @@ export function createMap(svg: SVGSVGElement, layers: SceneLayers, cb: MapCallba
       svg.classList.toggle('ov', overview);
       sc.pinObjs.forEach(o => o.g.classList.toggle('active', o.p.id === activeId));
       camAnim = null; Object.assign(cam, targetFor()); applyCam();
-      xray();
+      xray(); fade();
       requestAnimationFrame(() => svg.classList.remove('turning'));
     };
     const p = run().finally(() => { if (rebuilding === p) rebuilding = null; });
@@ -232,11 +264,12 @@ export function createMap(svg: SVGSVGElement, layers: SceneLayers, cb: MapCallba
     setActivePin: id => {
       activeId = id;
       sc.pinObjs.forEach(o => o.g.classList.toggle('active', o.p.id === id));
-      xray();
+      xray(); fade();
     },
     setOverview: on => { overview = on; svg.classList.toggle('ov', on); },
     setRotation,
     facing: id => sc.pins[id].facing,
+    zoomBy: f => { cb.onUserMove(); flyTo({ ...cam, w: Math.min(maxW(), Math.max(minW(), cam.w * f)) }, 350); },
     destroy() {
       cancelAnimationFrame(raf);
       svg.removeEventListener('pointerdown', onDown);
@@ -244,6 +277,7 @@ export function createMap(svg: SVGSVGElement, layers: SceneLayers, cb: MapCallba
       svg.removeEventListener('pointerup', onUp);
       svg.removeEventListener('pointercancel', onUp);
       svg.removeEventListener('wheel', onWheel);
+      svg.removeEventListener('contextmenu', noMenu);
       window.removeEventListener('resize', onResize);
       for (const g of Object.values(layers)) g.replaceChildren();
     },

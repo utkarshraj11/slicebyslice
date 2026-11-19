@@ -5,6 +5,7 @@ import { side, lot } from '../../data/lots';
 import V from '../../data/lots/village';
 
 /* West Village, schematic but true to the street map (measured from OpenStreetMap, Nov 2026).
+   The tile runs west to the Hudson: West St, Hudson River Park and Pier 45 at the foot of Christopher St.
    Frame: x runs down Bleecker St from Christopher St (north-west) to Carmine St (south-east),
    y runs west. Cross streets meet Bleecker in their real order; buildings on the pizzerias'
    blocks are the real lots (src/data/lots/village.ts) in real order. The stretches between
@@ -18,15 +19,15 @@ const B = V['BLEECKER STREET'], C = V['CHRISTOPHER STREET'], CA = V['CARMINE STR
 const J = V['JONES STREET'], G = V['GROVE STREET'], A7 = V['7 AVENUE SOUTH'], MO = V['MORTON STREET'];
 
 export function buildVillage(): Tile {
-  const t = new Tile('village', 40, 4, [46, 36], { hood: 'village', top: 9 });
+  const t = new Tile('village', 40, 4, [46, 40], { hood: 'village', top: 9 });
 
   /* ---------- streets ---------- */
   t.road(0, 19.35, 46, 1.3, 'x', { name: 'Bleecker St', nameAt: 0.16 });
-  t.road(3.0, 0, 1.3, 36, 'y', { name: 'Christopher St', nameAt: 0.82 });
+  t.road(3.0, 0, 1.3, 36.4, 'y', { name: 'Christopher St', nameAt: 0.82 });
   t.road(10.0, 20.65, 1.0, 15.35, 'y', { line: false, name: 'Grove St', nameAt: 0.7 });
   t.road(14.6, 0, 2.0, 36, 'y', { name: '7th Ave South', nameAt: 0.22 });
   t.road(27.2, 0, 1.0, 19.35, 'y', { line: false, name: 'Jones St', nameAt: 0.3 });
-  t.road(27.2, 20.65, 1.0, 15.35, 'y', { line: false, name: 'Morton St', nameAt: 0.7 });
+  t.road(27.2, 20.65, 1.0, 15.75, 'y', { line: false, name: 'Morton St', nameAt: 0.7 });
   t.road(32.0, 7.6, 1.0, 11.75, 'y', { line: false, name: 'Cornelia St', nameAt: 0.45 });
   t.road(39.2, 7.6, 1.3, 28.4, 'y', { name: 'Carmine St', nameAt: 0.78 });
   t.road(26.0, 5.6, 20.0, 2.0, 'x', { name: '6th Ave', nameAt: 0.25 });
@@ -111,6 +112,19 @@ export function buildVillage(): Tile {
   t.grass(41.7, 21.4, 4.0, 4.8); t.tree(42.6, 22.4, 0.9); t.tree(44.8, 25.2, 0.85); slide(t, 43.4, 23.2);
   t.face(side(CA, 26, 30), 'N', 41.1, 26.4, 35.9, { depth: 2.6 });
 
+  /* ---------- the Hudson edge: West St, Hudson River Park, Pier 45 at the foot of Christopher ---------- */
+  t.road(0, 36.4, 46, 1.8, 'x', { name: 'West St', nameAt: 0.62 });
+  t.plaza(0, 38.2, 46, 0.5, '#d9d2c4');                  // greenway (bike path)
+  t.grass(0, 38.7, 46, 0.8);
+  t.plaza(0, 39.5, 46, 0.5, '#e7ddc9');                  // esplanade
+  t.add(0, 39.9, 46, 40.05, t.rail(0, 39.97, 1.6, 39.97) + t.rail(5.4, 39.97, 46, 39.97), { small: true });
+  for (let x = 2.2; x < 46; x += 2.6) if (x < 1.4 || x > 5.6) t.tree(x, 39.1, 0.8);
+  { const X = t.X(1.6), Y = t.Y(40); t.add(1.6, 40, 5.4, 43.2, box(X, Y, -0.45, 3.8, 3.2, 0.45, '#e7ddc9', { L: '#cfc3ab', R: '#bfb39a' })); }
+  t.add(1.6, 43.1, 5.4, 43.25, t.rail(1.6, 43.18, 5.4, 43.18), { small: true });
+  t.bench(3.4, 41.4, 'x'); t.crowd(2.0, 40.4, 3.0, 2.4, 5);
+  t.car('x', 0, 46, 36.9, 1.5, '#e8e4dc'); t.car('x', 46, 0, 37.7, 1.4, '#f4c430', { taxi: true }); t.car('x', 0, 46, 37.2, 1.2, '#3f7fbf');
+  t.walker('x', 0.3, 45.7, 39.7, 0.4); t.walker('x', 45.7, 0.3, 38.45, 0.9, { shirt: '#2f6fb0' });
+
   /* ---------- life ---------- */
   t.queue(6.7, 19.05, 'x', 6, 0.45);                     // Mama's
   t.queue(4.6, 32.0, 'y', 6, 0.45);                      // L'Industrie, along Christopher
@@ -118,12 +132,12 @@ export function buildVillage(): Tile {
   t.queue(38.9, 9.9, 'y', 6, 0.45);                      // Joe's, along Carmine
   t.lamp(2.5, 18.9); t.lamp(4.8, 21.6); t.lamp(16.8, 18.8); t.lamp(38.8, 21.6); t.lamp(40.8, 18.6);
   t.hydrant(14.1, 18.8); t.hydrant(26.7, 21.5); t.hydrant(38.7, 8.4);
-  t.parked(9.0, 21.0, 'x', '#8e6cc2'); t.parked(35.0, 19.7, 'x', '#3f7fbf');
-  t.car('x', 0, 46, 19.68, 1.3, '#d9473a'); t.car('x', 0, 46, 19.68, 1.3, '#f4c430', { taxi: true }); t.car('x', 46, 0, 20.32, 1.2, '#58b5c9');
+  t.parked(9.0, 20.38, 'x', '#8e6cc2'); t.parked(35.0, 20.38, 'x', '#3f7fbf'); // Bleecker: one-way south-east, parking on the west kerb
+  t.car('x', 0, 46, 19.75, 1.3, '#d9473a'); t.car('x', 0, 46, 19.75, 1.25, '#f4c430', { taxi: true });
   t.car('y', 0, 36, 3.65, 1.0, '#e8e4dc'); t.car('y', 36, 0, 15.1, 1.4, '#f4c430', { taxi: true }); t.car('y', 0, 36, 16.1, 1.3, '#2f3a48');
-  t.car('x', 46, 26, 6.1, 1.4, '#f4c430', { taxi: true }); t.car('x', 26, 46, 7.1, 1.2, '#e8e4dc', { bus: true, len: 2.6 });
+  t.car('x', 46, 28.2, 6.1, 1.4, '#f4c430', { taxi: true }); t.car('x', 28.2, 46, 7.0, 1.2, '#e8e4dc', { bus: true });
   t.walker('x', 0.3, 45.7, 18.95, 0.45); t.walker('x', 0.3, 45.7, 21.05, 0.4); t.walker('y', 0.3, 35.7, 2.6, 0.4); t.walker('y', 0.3, 35.7, 4.7, 0.35);
-  t.walker('y', 7.8, 35.7, 38.9, 0.4); t.walker('x', 26.2, 45.8, 8.0, 0.4); t.walker('y', 0.3, 18.8, 14.2, 0.45);
+  t.walker('y', 7.8, 35.7, 38.9, 0.4); t.walker('x', 26.8, 45.8, 8.0, 0.4); t.walker('y', 0.3, 18.8, 14.2, 0.45);
   return t;
 }
 

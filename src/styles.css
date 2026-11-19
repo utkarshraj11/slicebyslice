@@ -39,8 +39,20 @@ header{position:fixed;left:12px;top:10px;max-width:400px;pointer-events:none;z-i
 #map #world{transition:opacity .17s}
 #map.turning #world{opacity:0}
 #map.no-intro .tile .lift,#map.no-intro .pins-in{animation:none}
-.objs > g{transition:opacity .35s}
+/* distance from the open pizzeria: solid pale "context" massing (no see-through clutter), the farthest also fades */
+.objs > g{transition:opacity .35s,filter .35s}
+.objs > g.f1{filter:grayscale(.5) sepia(.4) brightness(1.08) contrast(.85)}
+.objs > g.f2{filter:grayscale(1) sepia(.65) brightness(1.18) contrast(.55)}
+.objs > g.f3{filter:grayscale(1) sepia(.65) brightness(1.25) contrast(.42);opacity:.5}
 .objs > g.xray,.bridge.xray{opacity:.14}
+
+/* scale bar + zoom */
+.scalebar{position:fixed;left:20px;bottom:42px;z-index:4;pointer-events:none;background:rgba(243,239,229,.85);padding:5px 7px 6px;border-radius:6px;font:600 11px/1 'DM Sans',sans-serif;color:var(--muted);letter-spacing:.04em}
+.scalebar div{height:5px;margin-top:4px;border:1.5px solid var(--ink);border-top:0;transition:width .15s}
+.zoomctl{position:fixed;right:22px;bottom:84px;z-index:5;display:flex;flex-direction:column;align-items:center;gap:2px;background:var(--card);border:1.5px solid var(--ink);border-radius:999px;padding:4px;box-shadow:2px 2px 0 var(--ink)}
+.zoomctl button{width:30px;height:30px;border:1.5px solid var(--ink);background:#fff;color:var(--ink);border-radius:50%;cursor:pointer;font:700 17px/1 'DM Sans',sans-serif;padding:0}
+.zoomctl button:hover{background:var(--soft)}
+.zoomctl span{font:600 10px/1 'DM Sans',sans-serif;color:var(--muted);padding:3px 0}
 
 /* compass + rotate */
 .compass{position:fixed;right:22px;bottom:20px;z-index:5;display:flex;align-items:center;gap:6px;background:var(--card);border:1.5px solid var(--ink);border-radius:999px;padding:5px;box-shadow:2px 2px 0 var(--ink)}
@@ -121,7 +133,8 @@ header p{margin:0;font-size:14.5px;line-height:1.45;color:#4d463f;max-width:340p
   header .kicker{font-size:10.5px}
   .controls{top:auto;bottom:14px;right:12px;left:12px;justify-content:center;gap:7px}
   .btn{padding:9px 12px;font-size:13px}
-  .hint{display:none}
+  .hint,.zoomctl{display:none}
+  .scalebar{left:14px;bottom:auto;top:96px}
   .panel{left:0;right:0;bottom:0;top:auto;width:auto;max-height:74vh;border-radius:20px 20px 0 0;border-bottom:0;box-shadow:0 -3px 0 var(--ink);transform:translateY(105%)}
   .panel.open{transform:none}
   .hoodbar{bottom:64px}
@@ -135,4 +148,9 @@ header p{margin:0;font-size:14.5px;line-height:1.45;color:#4d463f;max-width:340p
   .app.zoomed header .kicker{display:none}
   .app.zoomed header h1{font-size:22px}
 }
+/* walkers' legs swing from the hip */
+/* (two poses toggled by the animation loop: a CSS animation per leg costs ~12 fps) */
+.lg1,.lg2{transform-box:fill-box;transform-origin:50% 0;transform:rotate(-20deg)}
+.lg2,.st .lg1{transform:rotate(20deg)}
+.st .lg2{transform:rotate(-20deg)}
 @media (prefers-reduced-motion:reduce){.tile .lift,.pins-in{animation:none}.wave{animation:none}}

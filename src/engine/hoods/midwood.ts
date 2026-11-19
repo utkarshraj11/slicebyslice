@@ -52,9 +52,9 @@ export function buildMidwood(): Tile {
 
   /* ---------- life ---------- */
   t.queue(8.95, 11.5, 'y', 6, 0.42);  // Di Fara's line along Avenue J
-  t.parked(9.0, 14.0, 'y', '#d9473a'); t.parked(6.6, 13.2, 'y', '#5a6e7a');
+  t.parked(3.0, 1.3, 'x', '#d9473a'); t.parked(12.0, 0.9, 'x', '#5a6e7a'); // E 16th St
   t.lamp(6.5, 9.4); t.lamp(9.1, 11.0); t.hydrant(9.1, 15.6);
-  t.car('y', 0, D, 7.45, 1.0, '#3f7fbf'); t.car('y', D, 0, 8.15, 0.9, '#e8e4dc'); t.car('x', 0, W, 10.1, 0.8, '#f08a4b');
+  t.car('y', 0, D, 7.55, 1.0, '#3f7fbf'); t.car('y', D, 0, 8.05, 0.9, '#e8e4dc'); t.car('x', 0, W, 10.1, 0.8, '#f08a4b');
   t.walker('y', 0.3, D - 0.3, 6.65, 0.35); t.walker('y', 0.3, D - 0.3, 8.95, 0.4); t.walker('x', 0.3, W - 0.3, 9.35, 0.35);
   return t;
 }

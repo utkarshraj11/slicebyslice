@@ -1,7 +1,7 @@
 /* Assembly & depth sorting: builds every tile for the current view rotation, sorts back-to-front
    and mounts the SVG DOM. Rebuilt from scratch whenever the view rotates. */
 import { PLACES, HOODS, HOOD_IDS, type HoodId, type Place } from '../data/places';
-import { INK, reseed, rr, iso, iso0, rot, rotBox, rotAABB, poly, box, esc } from './iso';
+import { INK, reseed, rr, iso, iso0, rot, rotBox, rotAABB, box, esc } from './iso';
 import { boatSVG, cloudSVG } from './parts';
 import type { Tile, AABB, Mover, PinInfo } from './tile';
 import { bridgeSVG, BRIDGE_BOUNDS } from './bridge';
@@ -100,7 +100,7 @@ export function tileCorners(t: Tile, z = 0) {
 /** Build and mount the whole scene for the current view rotation. Deterministic: reseeds the RNG first. */
 export function mountScene(L: SceneLayers, intro: boolean): Scene {
   reseed();
-  const tiles = BUILDERS.map(b => b());
+  const tiles = BUILDERS.map(b => { const t = b(); t.streetscape(); return t; });
   const tileById: Record<string, Tile> = {}; tiles.forEach(t => (tileById[t.id] = t));
   const pins: Record<string, PinInfo> = {}; tiles.forEach(t => Object.assign(pins, t.pins));
   for (const p of PLACES) if (!pins[p.id]) throw new Error(`No pizza(...) call registers a pin for place "${p.id}"`);
@@ -113,9 +113,7 @@ export function mountScene(L: SceneLayers, intro: boolean): Scene {
     if (intro) lift.style.animationDelay = (0.15 + i * 0.13).toFixed(2) + 's';
     const sorted = topo(t.items);
     const c = tileCorners(t, -t.thick);
-    const sh = [c.back, c.right, c.front, c.left].map(p => [p[0], p[1] + 9] as [number, number]);
-    let html = poly(sh, 'rgba(70,55,30,.08)', 'stroke="none"');
-    html += box(t.x0, t.y0, -t.thick, t.W, t.D, t.thick, t.slab, { top: t.slab, L: '#e8dfcd', R: '#d8ccb4' });
+    let html = box(t.x0, t.y0, -t.thick, t.W, t.D, t.thick, t.slab, { top: t.slab, L: '#e8dfcd', R: '#d8ccb4' });
     html += t.gnd.join('');
     html += '<g class="objs">' + sorted.map(it => '<g>' + it.svg + '</g>').join('') + '</g>';
     lift.innerHTML = html; g.appendChild(lift);

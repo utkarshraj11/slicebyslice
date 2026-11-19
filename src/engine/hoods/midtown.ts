@@ -19,7 +19,7 @@ export function buildMidtown(): Tile {
 
   /* ---------- streets ---------- */
   t.road(0, 19.6, W, 2.0, 'x', { name: '8th Ave', nameAt: 0.5 });
-  t.road(0, 4.2, W, 2.0, 'x', { name: '7th Ave', nameAt: 0.5 });
+  t.road(2.4, 4.2, W - 2.4, 2.0, 'x', { name: '7th Ave', nameAt: 0.5 }); // ends at Central Park South
   t.road(2.4, 0, 1.4, 18.0, 'y', { name: 'Central Park South', nameAt: 0.5 });
   t.road(7.6, 0, 1.0, D, 'y', { line: false, name: 'W 58th St', nameAt: 0.75 });
   t.road(12.2, 0, 1.4, D, 'y', { name: 'W 57th St', nameAt: 0.75 });
@@ -86,10 +86,10 @@ export function buildMidtown(): Tile {
   t.cart(14.0, 21.9); t.cart(31.4, 6.6, ['#d9473a', '#f6efe2']);
   t.subway(11.2, 18.8, 'x');
   t.lamp(11.8, 19.3); t.lamp(13.9, 22.0); t.lamp(28.6, 6.6); t.hydrant(30.5, 6.5);
-  t.car('x', W, 0, 20.1, 1.7, '#f4c430', { taxi: true }); t.car('x', W, 0, 21.1, 1.5, '#f4c430', { taxi: true });
-  t.car('x', 0, W, 4.7, 1.6, '#3f7fbf'); t.car('x', 0, W, 5.7, 1.4, '#e8e4dc', { bus: true, len: 2.6 });
+  t.car('x', W, 6.2, 20.1, 1.7, '#f4c430', { taxi: true }); t.car('x', W, 6.2, 21.1, 1.5, '#f4c430', { taxi: true }); // into Columbus Circle
+  t.car('x', 3.0, W, 4.7, 1.6, '#3f7fbf'); t.car('x', 4.2, W, 5.7, 1.4, '#e8e4dc', { bus: true });
   t.car('y', D, 0, 12.9, 1.3, '#f4c430', { taxi: true }); t.car('y', 0, D, 19.4, 1.2, '#d9473a'); t.car('y', D, 0, 29.5, 1.1, '#2f3a48');
-  t.walker('x', 0.5, W - 0.5, 19.35, 0.45); t.walker('x', 0.5, W - 0.5, 21.9, 0.5); t.walker('x', 0.5, W - 0.5, 6.5, 0.4);
+  t.walker('x', 7.4, W - 0.5, 19.5, 0.45); t.walker('x', 0.5, W - 0.5, 21.9, 0.5); t.walker('x', 2.6, W - 0.5, 6.5, 0.4);
   t.walker('y', 0.4, D - 0.4, 11.9, 0.4); t.walker('y', 0.4, D - 0.4, 28.7, 0.4);
   return t;
 }

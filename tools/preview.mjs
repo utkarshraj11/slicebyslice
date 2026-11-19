@@ -6,6 +6,7 @@
 //   pnpm shots --place joes               also open a review card
 //   pnpm shots --hood village             only this neighborhood
 //   pnpm shots --url http://localhost:5173   shoot a running dev server instead of dist/
+//   pnpm shots --hood dumbo --zoom 6      zoom in N wheel steps (at --at x,y, default centre) at 2x, to judge detail
 //
 // Writes PNGs to ./shots and prints console/page errors and an approximate fps.
 import { chromium } from 'playwright';
@@ -18,7 +19,7 @@ import { parseArgs } from 'node:util';
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const HOODS = ['hoboken', 'midtown', 'village', 'fidi', 'dumbo', 'midwood'];
 const { values: a } = parseArgs({
-  options: { mobile: { type: 'boolean' }, place: { type: 'string' }, hood: { type: 'string' }, url: { type: 'string' }, out: { type: 'string' } },
+  options: { mobile: { type: 'boolean' }, place: { type: 'string' }, hood: { type: 'string' }, url: { type: 'string' }, out: { type: 'string' }, zoom: { type: 'string' }, at: { type: 'string' } },
 });
 
 const TYPES = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg', '.webp': 'image/webp' };
@@ -41,7 +42,7 @@ await mkdir(out, { recursive: true });
 const b = await chromium.launch({ args: ['--no-sandbox'] });
 const pg = await b.newPage(a.mobile
   ? { viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true }
-  : { viewport: { width: 1440, height: 900 } });
+  : { viewport: { width: 1440, height: 900 }, deviceScaleFactor: a.zoom ? 2 : 1 });
 const errs = [];
 pg.on('pageerror', e => errs.push('PAGEERROR ' + e));
 pg.on('console', m => { if (['error', 'warning'].includes(m.type())) errs.push(`${m.type()}: ${m.text()}`); });
@@ -49,6 +50,12 @@ const tag = a.mobile ? 'm_' : '';
 const go = async (h, name) => {
   await pg.evaluate(h => { location.hash = h; }, h);
   await pg.waitForTimeout(1800);
+  if (a.zoom) {
+    const [x, y] = (a.at || '620,450').split(',').map(Number);
+    await pg.mouse.move(x, y);
+    for (let i = 0; i < +a.zoom; i++) { await pg.mouse.wheel(0, -200); await pg.waitForTimeout(60); }
+    await pg.waitForTimeout(300); name += '_z';
+  }
   await pg.screenshot({ path: join(out, `${tag}${name}.png`) });
 };
 

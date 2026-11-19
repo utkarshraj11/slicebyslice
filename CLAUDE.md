@@ -46,6 +46,8 @@ tools/fetch-lots.mjs       PLUTO + Building Footprints (NYC) or OpenStreetMap (H
 - The owner said prices are hard to recall, so **prices were left out on purpose**.
 - The owner said they "have changes". Ask what they are before refactoring anything.
 - A previous version is published as a claude.ai artifact. That copy won't update automatically. Host `dist/` anywhere static, such as GitHub Pages, Netlify or Vercel.
+- **To do later: smooth rotation.** Drag-to-turn snaps to quarter turns, because the engine rebuilds and depth-sorts the scene per 90° view. Free rotation (like April Zhu's Pocket City) would need a canvas/3D renderer.
+- **Streets are drawn about half their real width** (Bleecker's roadway is 1.3 units ≈ 16 ft; real ≈ 30 ft), while cars and people are now real size. So narrow streets hold one lane, and Washington St (Hoboken) has no parking lanes. Widening streets means re-laying every hood's facade lines.
 - Known pre-existing quirk (also in the original): on mobile the hidden, empty neighborhood bar peeks out as a small blob above the bottom buttons.
 - **Every neighborhood is built from real data on its real street layout (Nov 2026)**, schematic: real streets in real order, each pizzeria on its real block and side of the street, real neighbours and nearby landmarks; long stretches between clusters are shortened. Each hood file's header comment says what's real and what's composite. The owner asked for this ("Benny Tudino's is on the other side of Basile's", "Panello is on a different block", "riverfront behind Benny's", "a basketball court across the road from Joe's").
 - **Hoboken floors are estimates**: OSM has footprints and addresses but no storey counts or dates there; missing addresses are filled with typical brownstones.
@@ -124,14 +126,15 @@ iso(x, y, z)  => iso0(...rot(x, y), z)                           // world coords
 | Tile | x0 | y0 | size (x × y) | Street spine / notes |
 |---|---|---|---|---|
 | midtown | 0 | 4 | 34 × 30 | 8th Ave along x; Columbus Circle, Pop's, Hearst Tower; (shortened) Times Square, Port Authority; W 39th/38th lofts, Lazzara's; ESB backdrop |
-| village | 40 | 4 | 46 × 36 | Bleecker St along x (Christopher → Carmine); 6th Ave and the West 4th St courts on the east |
+| village | 40 | 4 | 46 × 40 | Bleecker St along x (Christopher → Carmine); 6th Ave and the West 4th St courts on the east; West St, Hudson River Park and Pier 45 on the west |
 | fidi | 88 | 4 | 24 × 35 | Wall St along y (Broad → South St); NYSE, Federal Hall, Hanover Sq; bridge's Manhattan anchorage |
-| hoboken | 40 | 47 | 44 × 38 | Washington St along x (8th → Newark); riverfront on the east edge; Monroe St on the west |
+| hoboken | 2 | 57 | 44 × 38 | Washington St along x (8th → Newark); riverfront on the east edge; Monroe St on the west. Its south end (Newark St, the Terminal) faces Christopher St across the Hudson, as in life |
 | dumbo | 88 | -30 | 22 × 20 | Water/Front St along y, Old Fulton along x; park and bridge's Brooklyn anchorage on the north |
 | midwood | 118 | -46 | 16 × 16 | Avenue J along y, E 15th/16th along x; the B/Q in an open cut |
 | liberty | 116 | 36 | 6 | Decoration only: Statue of Liberty island, no pins |
 
-- Water (`water.ts`): East River y −10..4, Hudson y 40.5..47 (both along x), the harbour x 112..132. `WATER` is the outline, `WATER_RECTS` scatters waves, `BOATS` are the routes.
+- **Island plate** (`water.ts`): everything sits on one bounded plate, `ISLAND` (a stepped outline hugging every tile), top at `Z_PLATE` (−0.45) with earth-coloured sides. Tiles are low plinths on it (`thick` defaults to 0.45); the water is painted flat on its surface.
+- Water (`water.ts`): East River y −10..4, Hudson y 44.5..57 (both along x; the Hudson is the wider, as in life), the harbour x 112..132. `WATER` is the outline (teal, darker toward the banks via clipped wide strokes), `WATER_RECTS` scatters waves, `BOATS` are the routes.
 - **Brooklyn Bridge** (`bridge.ts`, `BR`): deck along y at world x 90.6–92.6; anchorages at y `BR.ya` (Brooklyn) and `BR.yb` (Manhattan), towers at `BR.t1`/`BR.t2`, shores at `BR.shoreB`/`BR.shoreM`. `bridgeSVG()` is the top-level river span; `anchorage(t, 'brooklyn' | 'manhattan')` draws each shore's anchorage, deck and ramp into DUMBO and FiDi. Moving the bridge means changing `BR` (and keeping both tiles' x ranges under it).
 
 ### `Tile` builder API
@@ -147,7 +150,9 @@ iso(x, y, z)  => iso0(...rot(x, y), z)                           // world coords
 - `b(x,y,w,d,h,color,opts)`: a building; with `style:` set it's drawn by `styledBld()` (use that for anything new). `lot(l, x,y,w,d, opts)` places one real lot at an explicit footprint.
 - `house`, `tree`, `lamp`, `bench`, `hydrant`, `person`, `crowd`, `queue`, `parked`, `cart`, `subway`, `flagpole`, `fence`, and `add(x0,y0,x1,y1,svg,{above, small})` for custom shapes (`small` = never x-rayed).
 
-**Moving things:** `car(axis, a, b, c, speed, color, {taxi,bus,len,z,onTop})` loops from `a` to `b` along `axis` at the other coordinate `c`; `walker(axis, a, b, c, speed, {svg})` walks back and forth. Positions are world coords; the map projects them through the current rotation every frame.
+**Streetscape** (`t.streetscape()`, run automatically for every tile after its builder): from the roads registered by `road()` it draws sidewalk bands and kerbs (broken where another road crosses), plants street trees every ~40 ft where nothing stands (never near a crossing or a pizzeria storefront), and puts traffic `signal()`s on two corners of each crossing of a wide road. It then runs `checkTraffic()`, which `console.warn`s `[layout] …` for any car, bus, walker or parked car whose path runs through a building or (cars) leaves the carriageway; `pnpm shots` prints these, so keep it at zero. Roads have no outline of their own; the kerbs are their edges.
+
+**Moving things:** `car(axis, a, b, c, speed, color, {taxi,bus,len,z,onTop})` loops from `a` to `b` along `axis` at the other coordinate `c` (cars are real size: 1.25 × 0.5 units, buses 3.2 × 0.68; keep `c ± 0.25` inside the road); `walker(axis, a, b, c, speed, {svg})` walks back and forth. Positions are world coords; the map projects them through the current rotation every frame.
 
 ### Depth sorting
 
@@ -156,6 +161,10 @@ iso(x, y, z)  => iso0(...rot(x, y), z)                           // world coords
 - Flags: `above: true` (bridge decks, the Avenue J bridge) draws in front of anything under it; `onTop: true` on a mover draws it after whatever it rides on; `behindAll` marks the water.
 - **Never re-append or move tile `<g>` nodes after mounting** (it restarts the intro "drop" animation); a rotation replaces everything instead, with the intro switched off (`no-intro`).
 - Random choices come from a seeded generator, reseeded on every build, so each rotation is deterministic. Per-building colours use an address hash, not the RNG.
+
+### Distance fade
+
+When a review card is open, `fade()` in `map.ts` classes every static object by its view-space distance from the pizzeria (`fadeLevel`: < 6 units full detail, then `f1`/`f2`/`f3`). The CSS turns those into a solid pale "context massing" wash (grayscale + sepia filter, not transparency, so faded buildings don't show through each other); the farthest band also fades. Movers can't take the wash, so they only fade (`FADE_OP`). Ground (roads, parks, water) stays in full colour.
 
 ### Occlusion: x-ray, and the near-side rule
 
@@ -179,14 +188,15 @@ The old rule still matters for the plain neighbourhood view: a near-side box who
 
 - The camera is `{cx, cy, w}` in SVG user units and drives the `viewBox`. `fit(bounds)` frames bounds minus the screen areas covered by the panel, header, neighborhood bar and (whole-map view) a left margin for labels (`occlusion()`). `flyTo()` eases with a slight zoom-out bump.
 - `targetFor()` frames the open place's surroundings (`placeBounds`), else one tile, else the whole map. On phones (< 760px) the whole map frames Manhattan and Brooklyn only.
-- **Rotation UI**: the compass (`components/Compass.tsx`) has rotate buttons and a north needle; clicking the needle resets to k = 0. Keys `Q`/`E`. `state.rot` in the store; `openPlace` auto-rotates; the tour picks each hood's best rotation (`bestRot`).
+- **Rotation UI**: mouse drag turns the view (every ~110px of horizontal drag is a quarter turn, via `cb.onTurn`); shift-drag or right-drag pans; touch drags pan and pinch zooms. The compass (`components/Compass.tsx`) has rotate buttons and a north needle; clicking the needle resets to k = 0. Keys `Q`/`E`.
+- **Scale bar and zoom** (`MapView.tsx`): `applyCam` reports a round scale length and zoom % through `cb.onScale` (written straight to the DOM, since it runs every camera frame); the +/− buttons call `map.zoomBy()`. The scale is the drawing scale (1 unit = 12.5 ft); distances between neighbourhoods are shortened, so it's only true within a block. `state.rot` in the store; `openPlace` auto-rotates; the tour picks each hood's best rotation (`bestRot`).
 - Pins and labels live in screen-scaled layers (`#pins`, `#labels`). Pin tags show only when zoomed in (`near`). `LABEL_AT` picks the screen corner each label hangs from.
 - State: `mode`, `curHood`, `curPlace`, `listOpen`, `listBy`, `touring`, `rot`. URL hash: `#<placeId>` or `#<hoodId>`. Keys: Esc, ←/→, Enter on a pin, Q/E.
 - `prefers-reduced-motion` stops movers, intro animations and the rotation fade.
 
 ### Visual style
 
-Cream paper background (`#f3efe5`) with a canvas-generated grain overlay. Ink outlines in `#2e2b29` throughout. Flat fills, with top faces lightened and R faces darkened (`lt` and `dk`). Tomato accent `#d9473a`. Buttons and panels use a 1.5px ink border and a hard offset shadow (`box-shadow: 3px 3px 0 ink`). Fonts: Fraunces 800 for headings and DM Sans for UI text. Keep new shapes in this style: outlined, flat, slightly toy-like.
+Cream paper background (`#f3efe5`) with a canvas-generated grain overlay. Ink outlines in `#2e2b29` on objects; ground (`flat()`: roads, grass, plazas) gets soft brown edges instead. Tree crowns are clusters of leaf blobs outlined in a deep shade of the leaf colour. Flat fills, with top faces lightened and R faces darkened (`lt` and `dk`). Tomato accent `#d9473a`. Buttons and panels use a 1.5px ink border and a hard offset shadow (`box-shadow: 3px 3px 0 ink`). Fonts: Fraunces 800 for headings and DM Sans for UI text. Keep new shapes in this style: outlined, flat, slightly toy-like.
 
 **Don't draw** real brand logos, copyrighted characters or copies of public artworks. For example, the Charging Bull statue was left out on purpose. Generic landmarks and architecture are fine.
 
@@ -200,6 +210,7 @@ pnpm build && pnpm shots             # whole map + every neighborhood, desktop (
 pnpm shots --mobile                  # same at 390×844
 pnpm shots --place joes              # opens a review card
 pnpm shots --url http://localhost:5173   # shoot the running dev server instead
+pnpm shots --hood dumbo --zoom 6 [--at x,y]   # zoom in N wheel steps at 2x to judge cars, people, kerbs
 ```
 
 Screenshots go to `shots/`. Navigation in the script uses the URL hash. The script prints any console or page errors and a rough frame rate. The scene has about 12k SVG elements and runs at about 60fps in headless Chrome without a GPU. The hood view is too far out to judge facade detail: zoom with the mouse wheel in `pnpm dev`, or screenshot at `deviceScaleFactor: 2` after a few `mouse.wheel` steps. Look at the screenshots after **any** change to geometry or layout, because depth and overlap bugs only show up visually, and check more than one rotation (press `q` in the page, or set `location.hash` to a place to trigger auto-rotation).

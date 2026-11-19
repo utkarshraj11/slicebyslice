@@ -8,7 +8,7 @@ import {
 } from './iso';
 import {
   type BldOpts, type StorefrontOpts, type PersonOpts, type CarOpts,
-  bld, houseSVG, treeSVG, lampSVG, benchSVG, hydrantSVG, personSVG, carSVG, storefront,
+  bld, houseSVG, treeSVG, lampSVG, benchSVG, hydrantSVG, personSVG, carSVG, carLen, carWidth, storefront,
 } from './parts';
 import type { Lot } from '../data/lots';
 import { type LotOpts, styledBld, fromLot, frontage, dirsOf } from './styles';
@@ -23,7 +23,7 @@ export interface Item extends AABB { svg: string; node?: Element; small?: boolea
 export interface Mover extends AABB {
   kind: 'car' | 'walk'; axis: Axis; a: number; b: number; c: number; speed: number; svg: string;
   /** half extents along world x / y */
-  hw: number; hd: number; p: number; z?: number; phase?: number;
+  hw: number; hd: number; p: number; z?: number; phase?: number; st?: boolean;
   node?: Element; idx?: number; len?: number; dir?: number;
 }
 type FacesFn = (FL: Face, FR: Face, F: (d: Dir) => Face) => string;
@@ -68,11 +68,19 @@ export interface FaceOpts {
 /** Where a row() put each building (local coords). */
 export interface Placed { x: number; y: number; w: number; d: number; h: number; lot: Lot }
 
+/** Half extents (x, y) of a car's footprint, for depth sorting. */
+const carHalf = (axis: Axis, o: CarOpts): [number, number] => { const l = carLen(o) / 2, w = carWidth(o) / 2; return axis === 'x' ? [l, w] : [w, l]; };
+
 export class Tile {
   gnd: string[] = [];
   items: Item[] = [];
   movers: Mover[] = [];
   pins: Record<string, PinInfo> = {};
+  /** roads and every object footprint in local coords, for streetscape() */
+  roads: { x: number; y: number; w: number; d: number; axis: Axis }[] = [];
+  boxes: [number, number, number, number, boolean][] = [];
+  parkedAt: [number, number, number, number][] = [];
+  shops: [number, number, number, number][] = [];
   hood: HoodId | null; top: number; thick: number; slab: string;
   /** extents along world x and y */
   W: number; D: number;
@@ -82,22 +90,25 @@ export class Tile {
   constructor(public id: string, public x0: number, public y0: number, size: number | [number, number],
     o: { hood?: HoodId; top?: number; thick?: number; slab?: string } = {}) {
     [this.W, this.D] = typeof size === 'number' ? [size, size] : size;
-    this.hood = o.hood || null; this.top = o.top || 6; this.thick = o.thick ?? 1.0; this.slab = o.slab || C_TILE;
+    this.hood = o.hood || null; this.top = o.top || 6; this.thick = o.thick ?? 0.45; this.slab = o.slab || C_TILE; // thick: plinth down to the island plate (Z_PLATE)
   }
   X(x: number) { return this.x0 + x; }
   Y(y: number) { return this.y0 + y; }
   P(x: number, y: number, z = 0): Pt { return iso(this.x0 + x, this.y0 + y, z); }
   add(x0: number, y0: number, x1: number, y1: number, svg: string, ex: { above?: boolean; small?: boolean } = {}) {
     const it = rotAABB({ x0: this.X(x0), y0: this.Y(y0), x1: this.X(x1), y1: this.Y(y1), svg, ...ex });
+    this.boxes.push([Math.min(x0, x1), Math.min(y0, y1), Math.max(x0, x1), Math.max(y0, y1), !!ex.small]);
     this.items.push(it);
     return it;
   }
 
   /* ground layer (flat, not depth-sorted) */
-  flat(lp: [number, number][], fill: string, ex = '') { this.gnd.push(poly(lp.map(([x, y]) => this.P(x, y, 0.02)), fill, ex)); }
+  // ground has soft edges, not ink outlines
+  flat(lp: [number, number][], fill: string, ex = '') { this.gnd.push(poly(lp.map(([x, y]) => this.P(x, y, 0.02)), fill, ex.includes('stroke=') ? ex : ex + ' stroke="rgba(80,66,50,.3)"')); }
   rect(x: number, y: number, w: number, d: number, fill: string, ex = '') { this.flat([[x, y], [x + w, y], [x + w, y + d], [x, y + d]], fill, ex); }
   road(x: number, y: number, w: number, d: number, axis: Axis, o: { line?: boolean; fill?: string; name?: string; nameAt?: number } = {}) {
-    this.rect(x, y, w, d, o.fill || C_ROAD);
+    this.rect(x, y, w, d, o.fill || C_ROAD, 'stroke="none"'); // edges come from streetscape(): kerbs that break at crossings
+    this.roads.push({ x, y, w, d, axis });
     if (o.line !== false) {
       if (axis === 'x') { const yc = y + d / 2; this.gnd.push(ln(this.P(x, yc, 0.03), this.P(x + w, yc, 0.03), C_LINE, 1.6, 'stroke-dasharray="8 8" stroke-linecap="butt"')); }
       else { const xc = x + w / 2; this.gnd.push(ln(this.P(xc, y, 0.03), this.P(xc, y + d, 0.03), C_LINE, 1.6, 'stroke-dasharray="8 8" stroke-linecap="butt"')); }
@@ -155,7 +166,8 @@ export class Tile {
     for (let i = 0; i < n; i++) this.person(axis === 'x' ? x + i * gap + rr(-0.05, 0.05) : x + rr(-0.06, 0.06), axis === 'y' ? y + i * gap + rr(-0.05, 0.05) : y + rr(-0.06, 0.06));
   }
   parked(x: number, y: number, axis: Axis, color: string, o: CarOpts = {}) {
-    const hw = axis === 'x' ? 0.75 : 0.39, hd = axis === 'x' ? 0.39 : 0.75;
+    const [hw, hd] = carHalf(axis, o);
+    this.parkedAt.push([x - hw, y - hd, x + hw, y + hd]);
     this.add(x - hw, y - hd, x + hw, y + hd, at(this.X(x), this.Y(y), 0, carSVG(axis, color, o)), { small: true });
   }
   cart(x: number, y: number, umb = ['#3f7fbf', '#f2c230']) {
@@ -198,6 +210,7 @@ export class Tile {
       ...o.b,
     });
     const item = this.add(x, y, x + w, y + d, s);
+    this.shops.push([x, y, x + w, y + d]);
     // storefront rectangle on screen, for fading whatever stands in front of it
     const Fm = F(fronts[0]);
     const focus = Fm.hidden ? undefined : (() => {
@@ -205,6 +218,97 @@ export class Tile {
       return { x0: Math.min(...q.map(p => p[0])), x1: Math.max(...q.map(p => p[0])), y0: Math.min(...q.map(p => p[1])), y1: Math.max(...q.map(p => p[1])) };
     })();
     this.pins[id] = { at: [X + w / 2, Y + d / 2, h + (o.b?.tower ? 1.7 : 0.35)], facing: fronts[0], focus, item };
+  }
+
+  /**
+   * Sidewalks, kerbs, street trees and traffic signals for every road, run once after the hood is built.
+   * Kerbs break where another road crosses; trees and signals go only where nothing else stands, and
+   * trees keep clear of intersections and of the pizzerias' storefronts.
+   */
+  streetscape() {
+    const SW = 0.6, R = this.roads, W = this.W, D = this.D;
+    const free = (x0: number, y0: number, x1: number, y1: number, pad = 0) =>
+      x0 >= 0 && y0 >= 0 && x1 <= W && y1 <= D &&
+      !this.boxes.some(b => b[0] < x1 + pad && b[2] > x0 - pad && b[1] < y1 + pad && b[3] > y0 - pad) &&
+      !R.some(r => r.x < x1 && r.x + r.w > x0 && r.y < y1 && r.y + r.d > y0);
+    /** [a0, a1] along the road's axis minus the stretches where crossing roads cut through at offset c. */
+    const open = (r: typeof R[0], c: number) => {
+      const along = r.axis === 'x', a0 = along ? r.x : r.y, a1 = along ? r.x + r.w : r.y + r.d;
+      const cuts = R.filter(q => q !== r && q.axis !== r.axis && (along ? q.y <= c && q.y + q.d >= c : q.x <= c && q.x + q.w >= c))
+        .map(q => (along ? [q.x, q.x + q.w] : [q.y, q.y + q.d])).sort((p, q) => p[0] - q[0]);
+      const segs: [number, number][] = []; let s0 = a0;
+      for (const [c0, c1] of cuts) { if (c0 > s0) segs.push([s0, Math.min(c0, a1)]); s0 = Math.max(s0, c1); }
+      if (s0 < a1) segs.push([s0, a1]);
+      return segs.filter(([p, q]) => q - p > 0.05);
+    };
+    const P = (along: boolean, a: number, c: number, z = 0.03) => (along ? this.P(a, c, z) : this.P(c, a, z));
+    const walks: string[] = [], kerbs: string[] = [];
+    for (const r of R) {
+      const along = r.axis === 'x', lo = along ? r.y : r.x, hi = along ? r.y + r.d : r.x + r.w;
+      for (const [edge, out] of [[lo, -1], [hi, 1]] as const) {
+        const e2 = Math.max(0, Math.min(along ? D : W, edge + out * SW));
+        for (const [a, b] of open(r, edge + out * 0.01)) {
+          walks.push(poly([P(along, a, edge, 0.01), P(along, b, edge, 0.01), P(along, b, e2, 0.01), P(along, a, e2, 0.01)], '#e6e0d4', 'stroke="none"'));
+          kerbs.push(ln(P(along, a, edge), P(along, b, edge), 'rgba(80,66,50,.4)', 0.8) +
+            ln(P(along, a, edge + out * 0.05), P(along, b, edge + out * 0.05), '#fbf8f1', 1.4));
+        }
+      }
+    }
+    this.gnd.unshift(...walks); // under everything else on the ground
+    this.gnd.push(...kerbs);
+    this.checkTraffic();
+    // street trees: every ~3.2 units (40 ft) along each sidewalk, not near crossings or storefronts
+    const nearShop = (x: number, y: number) => this.shops.some(b => x > b[0] - 1.6 && x < b[2] + 1.6 && y > b[1] - 1.6 && y < b[3] + 1.6);
+    for (const r of R) {
+      const along = r.axis === 'x', lo = along ? r.y : r.x, hi = along ? r.y + r.d : r.x + r.w;
+      for (const c of [lo - 0.3, hi + 0.3]) for (const [a, b] of open(r, c)) {
+        for (let t = a + 1.4; t < b - 1.2; t += 3.2) {
+          const [x, y] = along ? [t, c] : [c, t];
+          if (rnd() < 0.3 || nearShop(x, y) || !free(x - 0.18, y - 0.18, x + 0.18, y + 0.18)) continue;
+          this.tree(x, y, 0.62);
+        }
+      }
+    }
+    // traffic signals on two opposite corners of each crossing of a wide road (one with a centre line or ≥ 1.3 wide)
+    for (const a of R) for (const b of R) {
+      if (a.axis !== 'x' || b.axis !== 'y') continue;
+      const x0 = Math.max(a.x, b.x), x1 = Math.min(a.x + a.w, b.x + b.w), y0 = Math.max(a.y, b.y), y1 = Math.min(a.y + a.d, b.y + b.d);
+      if (x1 <= x0 || y1 <= y0 || Math.max(a.d, b.w) < 1.3) continue;
+      for (const [x, y, f] of [[x0 - 0.25, y0 - 0.25, 'S'], [x1 + 0.25, y1 + 0.25, 'N']] as const)
+        if (free(x - 0.06, y - 0.06, x + 0.06, y + 0.06, 0.05)) this.signal(x, y, f);
+    }
+  }
+  /** Warn (dev console, and so `pnpm shots`) about any car, bus, walker or parked car whose path runs through a building. */
+  checkTraffic() {
+    const solid = this.boxes.map((b, i) => [...b, i] as const).filter(b => !b[4] && !this.items[b[5]].above);
+    const hit = (r: number[]) => solid.find(b => b[0] < r[2] - 0.02 && b[2] > r[0] + 0.02 && b[1] < r[3] - 0.02 && b[3] > r[1] + 0.02);
+    const paths = this.movers.filter(m => !m.z).map(m => {
+      const a0 = Math.min(m.a, m.b), a1 = Math.max(m.a, m.b);
+      return { what: `${m.kind} on ${m.axis} at ${m.c}`, r: m.axis === 'x' ? [a0, m.c - m.hd, a1, m.c + m.hd] : [m.c - m.hw, a0, m.c + m.hw, a1] };
+    }).concat(this.parkedAt.map(r => ({ what: `parked car at ${((r[0] + r[2]) / 2).toFixed(2)},${((r[1] + r[3]) / 2).toFixed(2)}`, r })));
+    // and cars must stay on the carriageway: sample along the path, both kerb-side corners inside some road
+    const onRoad = (x: number, y: number) => this.roads.some(r => x >= r.x - 0.04 && x <= r.x + r.w + 0.04 && y >= r.y - 0.04 && y <= r.y + r.d + 0.04);
+    for (const p of paths) if (!p.what.startsWith('walk')) {
+      const [x0, y0, x1, y1] = p.r, n = Math.max(2, Math.ceil(Math.max(x1 - x0, y1 - y0) / 0.4));
+      for (let i = 0; i <= n; i++) {
+        const u = i / n, pts = x1 - x0 > y1 - y0 ? [[x0 + (x1 - x0) * u, y0], [x0 + (x1 - x0) * u, y1]] : [[x0, y0 + (y1 - y0) * u], [x1, y0 + (y1 - y0) * u]];
+        const off = pts.find(([x, y]) => x > 0.05 && y > 0.05 && x < this.W - 0.05 && y < this.D - 0.05 && !onRoad(x, y));
+        if (off) { console.warn(`[layout] ${this.id}: ${p.what} leaves the road at ${off.map(v => v.toFixed(2))}`); break; }
+      }
+    }
+    for (const p of paths) { const b = hit(p.r); if (b) console.warn(`[layout] ${this.id}: ${p.what} runs into [${b.slice(0, 4).map(v => (+v).toFixed(2))}] ${this.items[b[5]]?.svg.slice(0, 70)}`); }
+  }
+  /** A traffic signal: dark pole, signal head with red / amber / green on its visible faces, a small walk light. */
+  signal(x: number, y: number, _toward: Dir = 'S') {
+    const X = this.X(x), Y = this.Y(y), hz = 1.05;
+    let s = ln(iso(X, Y, 0), iso(X, Y, hz + 0.36), '#3a3f3c', 1.6);
+    s += box(X - 0.07, Y - 0.07, hz, 0.14, 0.14, 0.36, '#2e3b33');
+    for (const dir of ['N', 'E', 'S', 'W'] as Dir[]) {
+      const F = face(X - 0.07, Y - 0.07, hz, 0.14, 0.14, dir); if (F.hidden) continue;
+      ['#e2483d', '#f2b134', '#43c25c'].forEach((c, i) => { const p = F.at(0.07, 0.3 - i * 0.11, 0.005); s += `<circle cx="${f1(p[0])}" cy="${f1(p[1])}" r="1" fill="${i === 0 ? c : '#55605a'}" stroke="none"/>`; });
+    }
+    s += box(X - 0.05, Y - 0.05, 0.62, 0.1, 0.1, 0.12, '#2e3b33');
+    this.add(x - 0.07, y - 0.07, x + 0.07, y + 0.07, s, { small: true });
   }
 
   /** A real building from tax-lot data, at an explicit footprint. Returns its height. */
@@ -258,9 +362,10 @@ export class Tile {
 
   /* movers (world coords; the map projects them through the current view rotation) */
   car(axis: Axis, a: number, b: number, c: number, speed: number, color: string, o: CarOpts = {}) {
-    this.movers.push({ kind: 'car', axis, a, b, c, speed, svg: carSVG(axis, color, o), hw: axis === 'x' ? 0.75 : 0.39, hd: axis === 'x' ? 0.39 : 0.75, p: rr(0, Math.abs(b - a)), z: o.z || 0, onTop: o.onTop, x0: 0, y0: 0, x1: 0, y1: 0 });
+    const [hw, hd] = carHalf(axis, o);
+    this.movers.push({ kind: 'car', axis, a, b, c, speed, svg: carSVG(axis, color, o), hw, hd, p: rr(0, Math.abs(b - a)), z: o.z || 0, onTop: o.onTop, x0: 0, y0: 0, x1: 0, y1: 0 });
   }
   walker(axis: Axis, a: number, b: number, c: number, speed: number, o: PersonOpts & { svg?: string } = {}) {
-    this.movers.push({ kind: 'walk', axis, a, b, c, speed, svg: o.svg || personSVG(o), hw: 0.14, hd: 0.14, p: rr(0, Math.abs(b - a) * 2), phase: rnd() * 6, x0: 0, y0: 0, x1: 0, y1: 0 });
+    this.movers.push({ kind: 'walk', axis, a, b, c, speed, svg: o.svg || personSVG({ walking: true, ...o }), hw: 0.14, hd: 0.14, p: rr(0, Math.abs(b - a) * 2), phase: rnd() * 6, x0: 0, y0: 0, x1: 0, y1: 0 });
   }
 }

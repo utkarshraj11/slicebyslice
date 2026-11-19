@@ -5,6 +5,7 @@ import { side, lot, type Lot } from '../../data/lots';
 import Hb from '../../data/lots/hoboken';
 
 /* Hoboken, schematic but true to the street map (OpenStreetMap, Nov 2026).
+   Placed so its south end (Newark St, the Terminal) faces Christopher St across the Hudson, as in life.
    Frame: x runs south along Washington St (Hoboken's grid, 13° east of true north), y runs west.
    Real order east→west: Hudson River · Sinatra Dr · Hudson St · Washington St · Bloomfield St ·
    (Garden … Jefferson, shortened to one block) · Monroe St. North→south: 8th · 7th · 6th · (5th) · 4th ·
@@ -31,14 +32,14 @@ const stoops = (from: number, n: number) => Object.fromEntries(Array.from({ leng
 
 export function buildHoboken(): Tile {
   const W = 44, D = 38;
-  const t = new Tile('hoboken', 40, 47, [W, D], { hood: 'hoboken', top: 7 });
+  const t = new Tile('hoboken', 2, 57, [W, D], { hood: 'hoboken', top: 7 });
 
   /* ---------- streets ---------- */
   t.plaza(0, 0, W, 1.4, '#e7ddc9');
   t.add(0, -0.05, W, 0.15, t.rail(0, 0.12, W, 0.12), { small: true });
   t.road(0, 1.4, W, 1.2, 'x', { line: false, name: 'Sinatra Dr', nameAt: 0.3 });
-  t.road(0, 8.4, W, 1.0, 'x', { line: false, name: 'Hudson St', nameAt: 0.45 });
-  t.road(0, 16.6, W, 1.4, 'x', { name: 'Washington St', nameAt: 0.56 });
+  t.road(0, 8.4, W - 4.4, 1.0, 'x', { line: false, name: 'Hudson St', nameAt: 0.45 });
+  t.road(0, 16.6, W - 4.4, 1.4, 'x', { name: 'Washington St', nameAt: 0.56 });
   t.road(0, 25.6, W - 4.4, 1.0, 'x', { line: false, name: 'Bloomfield St', nameAt: 0.45 });
   t.road(0, 31.0, W - 4.4, 1.0, 'x', { line: false, name: 'Monroe St', nameAt: 0.5 });
   for (const [x, name] of [[1.6, '8th St'], [8.6, '7th St'], [20.0, '6th St'], [25.6, '4th St'], [30.0, '1st St'], [39.0, 'Newark St']] as const)
@@ -52,7 +53,10 @@ export function buildHoboken(): Tile {
   t.crowd(0.5, 0.35, W - 1, 0.8, 7);
 
   /* ---------- north of 8th ---------- */
-  t.face([brown('8TH STREET', 57, 30, 'C1'), brown('8TH STREET', 61), ...run('8TH STREET', 101, 9, 'C1')], 'S', 1.0, 3.2, D - 0.2, { depth: 0.9 });
+  // broken where Hudson, Washington, Bloomfield and Monroe Sts run on north
+  t.face([brown('8TH STREET', 57, 30, 'C1'), brown('8TH STREET', 61), ...run('8TH STREET', 101, 2, 'C1')], 'S', 1.0, 3.2, 7.8, { depth: 0.9 });
+  for (const [a, b, n] of [[10.0, 16.0, 105], [18.6, 25.0, 121], [27.2, 30.4, 137], [32.6, D - 0.2, 147]] as const)
+    t.face(run('8TH STREET', n, 6, 'C1'), 'S', 1.0, a, b, { depth: 0.9 });
 
   /* ---------- 8th → 7th: Monroe Center & Panello ---------- */
   t.face(run('WASHINGTON STREET', 700, 3), 'E', 18.6, 8.0, 3.4, { depth: 3.2, corners: { 700: 'S' } });
@@ -120,10 +124,10 @@ export function buildHoboken(): Tile {
   t.queue(35.6, 16.3, 'x', 4, 0.42);  // Basile's
   t.queue(3.8, 32.3, 'x', 4, 0.42);   // Panello
   t.lamp(19.3, 16.3); t.lamp(29.9, 18.3); t.lamp(9.9, 18.3); t.hydrant(20.6, 18.4); t.hydrant(31.4, 16.2);
-  t.parked(13.4, 18.25, 'x', '#3f7fbf'); t.parked(37.6, 16.35, 'x', '#5aa469');
-  t.car('x', 0, W, 16.95, 1.3, '#f08a4b'); t.car('x', W, 0, 17.65, 1.3, '#e8e4dc'); t.car('x', W, 0, 2.0, 1.2, '#5aa469');
-  t.car('y', 2.6, D, 20.6, 1.0, '#2f3a48'); t.car('y', D, 2.6, 31.8, 1.0, '#d9473a');
-  t.walker('x', 0.3, W - 0.3, 0.5, 0.5); t.walker('x', 0.3, W - 0.3, 1.1, 0.4); t.walker('x', 0.3, W - 0.3, 16.3, 0.45); t.walker('x', 0.3, W - 0.3, 18.3, 0.4); t.walker('y', 3, D - 1, 21.4, 0.4);
+  t.parked(9.5, 12.5, 'y', '#3f7fbf'); t.parked(9.5, 24.0, 'y', '#5aa469'); // on 7th St; Washington St is drawn too narrow for parking lanes
+  t.car('x', 0, 40.0, 17.0, 1.3, '#f08a4b'); t.car('x', 40.0, 0, 17.6, 1.3, '#e8e4dc'); t.car('x', 40.2, 0, 2.0, 1.2, '#5aa469');
+  t.car('y', 2.6, D, 20.6, 1.0, '#2f3a48'); t.car('y', D, 2.6, 30.6, 1.0, '#d9473a');
+  t.walker('x', 0.3, 40.4, 0.5, 0.5); t.walker('x', 0.3, 40.4, 1.1, 0.4); t.walker('x', 0.3, 40.4, 16.3, 0.45); t.walker('x', 0.3, 40.4, 18.3, 0.4); t.walker('y', 3, D - 1, 21.4, 0.4);
   return t;
 }
 
