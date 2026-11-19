@@ -1,28 +1,45 @@
-/* Tile builder: local coords (0..T) → world, collecting ground SVG, depth-sorted objects and movers. */
+/* Tile builder: local coords → world, collecting ground SVG, depth-sorted objects and movers.
+   Everything is placed in world coordinates (x = south, y = west); depth-sort boxes are stored in
+   view space so the scene can be rebuilt for any view rotation. */
 import type { HoodId } from '../data/places';
-import { type Axis, type Pt, INK, C_TILE, C_ROAD, C_LINE, C_GRASS, rnd, rr, iso, f1, poly, ln, box, circlePts, at } from './iso';
+import {
+  type Axis, type Pt, type Dir, type Face, INK, C_TILE, C_ROAD, C_LINE, C_GRASS,
+  rnd, rr, iso, f1, poly, ln, box, circlePts, at, face, rotAABB, gtext,
+} from './iso';
 import {
   type BldOpts, type StorefrontOpts, type PersonOpts, type CarOpts,
   bld, houseSVG, treeSVG, lampSVG, benchSVG, hydrantSVG, personSVG, carSVG, storefront,
 } from './parts';
-import type { Face } from './iso';
 import type { Lot } from '../data/lots';
-import { type LotOpts, styledBld, fromLot, frontage } from './styles';
+import { type LotOpts, styledBld, fromLot, frontage, dirsOf } from './styles';
 
 /** bld() or, when opts.style is set, the styled renderer. */
 const build = (x: number, y: number, w: number, d: number, h: number, c: string, o: BldOpts) =>
   o.style ? styledBld(x, y, w, d, h, c, { ...o, style: o.style }) : bld(x, y, w, d, h, c, o);
 
-/** Anything with a world-space footprint used for depth sorting. */
+/** A footprint used for depth sorting (view space once added to a tile). */
 export interface AABB { x0: number; y0: number; x1: number; y1: number; above?: boolean; behindAll?: boolean; onTop?: boolean }
-export interface Item extends AABB { svg: string; node?: Element }
+export interface Item extends AABB { svg: string; node?: Element; small?: boolean }
 export interface Mover extends AABB {
   kind: 'car' | 'walk'; axis: Axis; a: number; b: number; c: number; speed: number; svg: string;
+  /** half extents along world x / y */
   hw: number; hd: number; p: number; z?: number; phase?: number;
   node?: Element; idx?: number; len?: number; dir?: number;
 }
+type FacesFn = (FL: Face, FR: Face, F: (d: Dir) => Face) => string;
 export interface PizzaOpts extends StorefrontOpts {
-  front?: 'L' | 'R' | 'LR'; u0?: number; u1?: number; faces?: (FL: Face, FR: Face) => string; b?: BldOpts;
+  /** storefront side(s): compass letters ('W', 'S', 'NE', …); legacy 'L' = W, 'R' = S */
+  front?: string; u0?: number; u1?: number; faces?: FacesFn; b?: BldOpts;
+}
+/** What the map needs to know about each pizzeria. */
+export interface PinInfo {
+  /** world position of the pin */
+  at: [number, number, number];
+  /** compass side of the storefront */
+  facing: Dir;
+  /** screen rectangle of the storefront in the current view (for x-ray), if visible */
+  focus?: { x0: number; y0: number; x1: number; y1: number };
+  item: Item;
 }
 /** One real building in a row(). */
 export interface RowItem extends LotOpts {
@@ -30,8 +47,23 @@ export interface RowItem extends LotOpts {
   /** make this lot a pizzeria storefront */
   pizza?: PizzaOpts & { id: string };
   /** extra drawing on the building's faces (signs, painted ads…) */
-  faces?: (FL: Face, FR: Face) => string;
+  faces?: FacesFn;
   depth?: number;
+  /** override the frontage-derived width */
+  width?: number;
+}
+/** Options for face(): one side of a street, laid out from real lots. */
+export interface FaceOpts {
+  /** maximum building depth (lots are as deep as their real depth, compressed) */
+  depth: number;
+  /** storefront options for pizzerias on this face, by place id */
+  pizzas?: Record<string, PizzaOpts>;
+  /** extra street sides for corner lots, by house number, e.g. { 327: 'N' } */
+  corners?: Record<number, string>;
+  /** per-lot overrides, by house number */
+  over?: Record<number, Partial<RowItem>>;
+  /** scale all frontages so the face exactly fills from..to (default: real widths, last lot cut at `to`) */
+  fit?: boolean;
 }
 /** Where a row() put each building (local coords). */
 export interface Placed { x: number; y: number; w: number; d: number; h: number; lot: Lot }
@@ -40,32 +72,45 @@ export class Tile {
   gnd: string[] = [];
   items: Item[] = [];
   movers: Mover[] = [];
-  /** place id → world [x, y, z] of its pin */
-  pins: Record<string, [number, number, number]> = {};
+  pins: Record<string, PinInfo> = {};
   hood: HoodId | null; top: number; thick: number; slab: string;
+  /** extents along world x and y */
+  W: number; D: number;
   // filled in when mounted
   node?: SVGGElement; objs?: Element; sorted: Item[] = [];
 
-  constructor(public id: string, public x0: number, public y0: number, public T: number,
+  constructor(public id: string, public x0: number, public y0: number, size: number | [number, number],
     o: { hood?: HoodId; top?: number; thick?: number; slab?: string } = {}) {
+    [this.W, this.D] = typeof size === 'number' ? [size, size] : size;
     this.hood = o.hood || null; this.top = o.top || 6; this.thick = o.thick ?? 1.0; this.slab = o.slab || C_TILE;
   }
   X(x: number) { return this.x0 + x; }
   Y(y: number) { return this.y0 + y; }
   P(x: number, y: number, z = 0): Pt { return iso(this.x0 + x, this.y0 + y, z); }
-  add(x0: number, y0: number, x1: number, y1: number, svg: string, ex: { above?: boolean } = {}) {
-    this.items.push({ x0: this.X(x0), y0: this.Y(y0), x1: this.X(x1), y1: this.Y(y1), svg, ...ex });
+  add(x0: number, y0: number, x1: number, y1: number, svg: string, ex: { above?: boolean; small?: boolean } = {}) {
+    const it = rotAABB({ x0: this.X(x0), y0: this.Y(y0), x1: this.X(x1), y1: this.Y(y1), svg, ...ex });
+    this.items.push(it);
+    return it;
   }
 
   /* ground layer (flat, not depth-sorted) */
   flat(lp: [number, number][], fill: string, ex = '') { this.gnd.push(poly(lp.map(([x, y]) => this.P(x, y, 0.02)), fill, ex)); }
   rect(x: number, y: number, w: number, d: number, fill: string, ex = '') { this.flat([[x, y], [x + w, y], [x + w, y + d], [x, y + d]], fill, ex); }
-  road(x: number, y: number, w: number, d: number, axis: Axis, o: { line?: boolean; fill?: string } = {}) {
+  road(x: number, y: number, w: number, d: number, axis: Axis, o: { line?: boolean; fill?: string; name?: string; nameAt?: number } = {}) {
     this.rect(x, y, w, d, o.fill || C_ROAD);
     if (o.line !== false) {
       if (axis === 'x') { const yc = y + d / 2; this.gnd.push(ln(this.P(x, yc, 0.03), this.P(x + w, yc, 0.03), C_LINE, 1.6, 'stroke-dasharray="8 8" stroke-linecap="butt"')); }
       else { const xc = x + w / 2; this.gnd.push(ln(this.P(xc, y, 0.03), this.P(xc, y + d, 0.03), C_LINE, 1.6, 'stroke-dasharray="8 8" stroke-linecap="butt"')); }
     }
+    if (o.name) {
+      const along = o.nameAt ?? 0.5, off = o.line === false ? 0 : 0.28;
+      this.streetName(o.name, axis === 'x' ? x + w * along : x + w / 2 + off, axis === 'x' ? y + d / 2 + off : y + d * along, axis, axis === 'x' ? d : w);
+    }
+  }
+  /** Street name painted on the roadway, reading left-to-right in any view. */
+  streetName(name: string, x: number, y: number, axis: Axis, width = 1.2) {
+    const size = Math.max(5, Math.min(8.5, width * 5));
+    this.gnd.push(gtext(this.X(x), this.Y(y), axis, name.toUpperCase(), size, '#fbf8f1', { ls: 1.6 }));
   }
   cobble(x: number, y: number, w: number, d: number) { this.rect(x, y, w, d, 'url(#cobble)'); }
   plaza(x: number, y: number, w: number, d: number, fill = 'url(#pavers)') { this.rect(x, y, w, d, fill); }
@@ -92,22 +137,26 @@ export class Tile {
     for (let i = 0; i <= n; i++) { const x = x0 + ((x1 - x0) * i) / n, y = y0 + ((y1 - y0) * i) / n; s += ln(this.P(x, y, 0), this.P(x, y, z), INK, 0.8); }
     return s;
   }
+  /** A straight railing as a depth-sorted object. */
+  fence(x0: number, y0: number, x1: number, y1: number, z = 0.45) {
+    this.add(Math.min(x0, x1) - 0.03, Math.min(y0, y1) - 0.03, Math.max(x0, x1) + 0.03, Math.max(y0, y1) + 0.03, this.rail(x0, y0, x1, y1, z), { small: true });
+  }
 
   /* objects (depth-sorted) */
-  b(x: number, y: number, w: number, d: number, h: number, c: string, o: BldOpts = {}) { this.add(x, y, x + w, y + d, build(this.X(x), this.Y(y), w, d, h, c, o)); }
+  b(x: number, y: number, w: number, d: number, h: number, c: string, o: BldOpts = {}) { return this.add(x, y, x + w, y + d, build(this.X(x), this.Y(y), w, d, h, c, o)); }
   house(x: number, y: number, w: number, d: number, h: number, c: string, rc: string) { this.add(x, y, x + w, y + d, houseSVG(this.X(x), this.Y(y), w, d, h, c, rc)); }
   tree(x: number, y: number, s = 1) { this.add(x - 0.15, y - 0.15, x + 0.15, y + 0.15, treeSVG(this.X(x), this.Y(y), s)); }
-  lamp(x: number, y: number) { this.add(x - 0.05, y - 0.05, x + 0.05, y + 0.05, lampSVG(this.X(x), this.Y(y))); }
-  bench(x: number, y: number, a: Axis = 'x') { this.add(x - 0.35, y - 0.35, x + 0.35, y + 0.35, benchSVG(this.X(x), this.Y(y), a)); }
-  hydrant(x: number, y: number) { this.add(x - 0.07, y - 0.07, x + 0.07, y + 0.07, hydrantSVG(this.X(x), this.Y(y))); }
-  person(x: number, y: number, o?: PersonOpts) { this.add(x - 0.14, y - 0.14, x + 0.14, y + 0.14, at(this.X(x), this.Y(y), 0, personSVG(o))); }
+  lamp(x: number, y: number) { this.add(x - 0.05, y - 0.05, x + 0.05, y + 0.05, lampSVG(this.X(x), this.Y(y)), { small: true }); }
+  bench(x: number, y: number, a: Axis = 'x') { this.add(x - 0.35, y - 0.35, x + 0.35, y + 0.35, benchSVG(this.X(x), this.Y(y), a), { small: true }); }
+  hydrant(x: number, y: number) { this.add(x - 0.07, y - 0.07, x + 0.07, y + 0.07, hydrantSVG(this.X(x), this.Y(y)), { small: true }); }
+  person(x: number, y: number, o?: PersonOpts) { this.add(x - 0.14, y - 0.14, x + 0.14, y + 0.14, at(this.X(x), this.Y(y), 0, personSVG(o)), { small: true }); }
   crowd(x: number, y: number, w: number, d: number, n: number) { for (let i = 0; i < n; i++) this.person(x + rr(0, w), y + rr(0, d)); }
   queue(x: number, y: number, axis: Axis, n: number, gap = 0.42) {
     for (let i = 0; i < n; i++) this.person(axis === 'x' ? x + i * gap + rr(-0.05, 0.05) : x + rr(-0.06, 0.06), axis === 'y' ? y + i * gap + rr(-0.05, 0.05) : y + rr(-0.06, 0.06));
   }
   parked(x: number, y: number, axis: Axis, color: string, o: CarOpts = {}) {
     const hw = axis === 'x' ? 0.75 : 0.39, hd = axis === 'x' ? 0.39 : 0.75;
-    this.add(x - hw, y - hd, x + hw, y + hd, at(this.X(x), this.Y(y), 0, carSVG(axis, color, o)));
+    this.add(x - hw, y - hd, x + hw, y + hd, at(this.X(x), this.Y(y), 0, carSVG(axis, color, o)), { small: true });
   }
   cart(x: number, y: number, umb = ['#3f7fbf', '#f2c230']) {
     const X = this.X(x), Y = this.Y(y); let s = box(X - 0.3, Y - 0.2, 0.15, 0.6, 0.4, 0.5, '#d9d4cb', { L: '#e9e4da' });
@@ -115,17 +164,19 @@ export class Tile {
     const t = iso(X, Y, 1.45), rx = 15;
     s += `<path d="M${f1(t[0] - rx)} ${f1(t[1] + 2)}Q${f1(t[0])} ${f1(t[1] - 12)} ${f1(t[0] + rx)} ${f1(t[1] + 2)}Z" fill="${umb[0]}"/>`;
     s += `<path d="M${f1(t[0] - 5)} ${f1(t[1] - 3.5)}Q${f1(t[0])} ${f1(t[1] - 9)} ${f1(t[0] + 5)} ${f1(t[1] - 3.5)}L${f1(t[0] + 7)} ${f1(t[1] + 2)}L${f1(t[0] - 7)} ${f1(t[1] + 2)}Z" fill="${umb[1]}" stroke-width=".6"/>`;
-    this.add(x - 0.3, y - 0.2, x + 0.3, y + 0.2, s);
+    this.add(x - 0.3, y - 0.2, x + 0.3, y + 0.2, s, { small: true });
   }
   subway(x: number, y: number, axis: Axis = 'x') {
     const X = this.X(x), Y = this.Y(y); const w = axis === 'x' ? 1.0 : 0.55, d = axis === 'x' ? 0.55 : 1.0;
     let s = box(X, Y, 0, w, d, 0.06, '#3b3836', { top: '#4a4542' });
-    s += box(X, Y, 0.06, w, 0.06, 0.32, '#3f8f5a', { top: '#58a873' }) + box(X, Y + d - 0.06, 0.06, w, 0.06, 0.32, '#3f8f5a', { top: '#58a873' });
-    for (const [gx, gy] of [[X + 0.05, Y + 0.05], [X + 0.05, Y + d - 0.05]]) {
+    s += axis === 'x'
+      ? box(X, Y, 0.06, w, 0.06, 0.32, '#3f8f5a', { top: '#58a873' }) + box(X, Y + d - 0.06, 0.06, w, 0.06, 0.32, '#3f8f5a', { top: '#58a873' })
+      : box(X, Y, 0.06, 0.06, d, 0.32, '#3f8f5a', { top: '#58a873' }) + box(X + w - 0.06, Y, 0.06, 0.06, d, 0.32, '#3f8f5a', { top: '#58a873' });
+    for (const [gx, gy] of axis === 'x' ? [[X + 0.05, Y + 0.05], [X + 0.05, Y + d - 0.05]] : [[X + 0.05, Y + 0.05], [X + w - 0.05, Y + 0.05]]) {
       const b = iso(gx, gy, 0.38), t = iso(gx, gy, 0.95);
       s += ln(b, t, '#3f8f5a', 1.3) + `<circle cx="${f1(t[0])}" cy="${f1(t[1])}" r="2.4" fill="#7fd09a" stroke-width=".7"/>`;
     }
-    this.add(x, y, x + w, y + d, s);
+    this.add(x, y, x + w, y + d, s, { small: true });
   }
   flagpole(x: number, y: number, h: number, stripes: string[]) {
     const b = this.P(x, y, 0), t = this.P(x, y, h); let s = ln(b, t, '#6b625a', 1.1);
@@ -134,47 +185,57 @@ export class Tile {
     s += `<rect x="${f1(t[0])}" y="${f1(t[1])}" width="${fw}" height="${fh}" fill="none" stroke-width=".7"/>`;
     this.add(x - 0.05, y - 0.05, x + 0.05, y + 0.05, s);
   }
-  /** Pizzeria storefront building. Registers the pin for PLACES[id]. */
+
+  /** Pizzeria storefront building. Registers the pin (position, storefront side, x-ray rect) for PLACES[id]. */
   pizza(id: string, x: number, y: number, w: number, d: number, h: number, c: string, o: PizzaOpts = {}) {
     const X = this.X(x), Y = this.Y(y);
-    const fronts = o.front || 'L';
-    const sf = (F: Face, len: number) => storefront(F, o.u0 ?? 0.12, o.u1 ?? len - 0.12, { wall: c, ...o });
+    const fronts = dirsOf(o.front || 'W');
+    const F = (dir: Dir) => face(X, Y, 0, w, d, dir);
+    const sf = (Fc: Face) => storefront(Fc, o.u0 ?? 0.12, o.u1 ?? Fc.L - 0.12, { wall: c, ...o });
     const s = build(X, Y, w, d, h, c, {
-      g0: 2.75, noWinL: fronts.includes('L') && h < 4, noWinR: fronts.includes('R') && h < 4,
-      extraFaces: (FL, FR) => (fronts.includes('L') ? sf(FL, w) : '') + (fronts.includes('R') ? sf(FR, d) : '') + (o.faces ? o.faces(FL, FR) : ''),
+      g0: 2.75, noWinL: fronts.includes('W') && h < 4, noWinR: fronts.includes('S') && h < 4,
+      extraFaces: (FL, FR) => fronts.map(dir => sf(F(dir))).join('') + (o.faces ? o.faces(FL, FR, F) : ''),
       ...o.b,
     });
-    this.add(x, y, x + w, y + d, s);
-    this.pins[id] = [X + w / 2, Y + d / 2, h + (o.b?.tower ? 1.7 : 0.35)];
+    const item = this.add(x, y, x + w, y + d, s);
+    // storefront rectangle on screen, for fading whatever stands in front of it
+    const Fm = F(fronts[0]);
+    const focus = Fm.hidden ? undefined : (() => {
+      const q = [Fm.at(0, 0), Fm.at(Fm.L, 0), Fm.at(0, 3.2), Fm.at(Fm.L, 3.2)];
+      return { x0: Math.min(...q.map(p => p[0])), x1: Math.max(...q.map(p => p[0])), y0: Math.min(...q.map(p => p[1])), y1: Math.max(...q.map(p => p[1])) };
+    })();
+    this.pins[id] = { at: [X + w / 2, Y + d / 2, h + (o.b?.tower ? 1.7 : 0.35)], facing: fronts[0], focus, item };
   }
 
   /** A real building from tax-lot data, at an explicit footprint. Returns its height. */
-  lot(l: Lot, x: number, y: number, w: number, d: number, o: LotOpts & { faces?: (FL: Face, FR: Face) => string } = {}) {
+  lot(l: Lot, x: number, y: number, w: number, d: number, o: LotOpts & { faces?: FacesFn } = {}) {
     const r = fromLot(l, o);
-    this.b(x, y, w, d, r.h, r.c, { ...r.opts, extraFaces: o.faces });
+    const X = this.X(x), Y = this.Y(y), fx = o.faces;
+    this.b(x, y, w, d, r.h, r.c, { ...r.opts, extraFaces: fx && ((FL, FR) => fx(FL, FR, dir => face(X, Y, 0, w, d, dir))) });
     return r.h;
   }
   /**
    * Real buildings side by side along a street, in the given order, each as wide as its (compressed)
-   * frontage. axis 'x': street runs along x, facades are L faces on the line y = at, buildings extend
-   * back toward smaller y. axis 'y': street runs along y, facades are R faces on x = at, buildings
-   * extend toward smaller x. The row runs from `from` toward `to` and the last building is cut at `to`.
+   * frontage. `facing` is the compass side the facades face (toward the street); `at` is the facade line
+   * (y for W/E, x for S/N). The row runs from `from` toward `to` and the last building is cut at `to`.
    */
-  row(axis: Axis, at: number, from: number, to: number, items: RowItem[], maxDepth: number): Placed[] {
+  row(facing: Dir, at: number, from: number, to: number, items: RowItem[], maxDepth: number): Placed[] {
     const dir = Math.sign(to - from) || 1, out: Placed[] = [];
     let cur = from;
     for (const it of items) {
-      const len = Math.min(frontage(it.lot.front ?? 25), Math.abs(to - cur));
+      const len = Math.min(it.width ?? frontage(it.lot.front ?? 25), Math.abs(to - cur));
       if (len < 0.3) break;
       const a0 = Math.min(cur, cur + dir * len), dep = it.depth ?? Math.min(maxDepth, frontage(it.lot.depth ?? 50));
-      const [x, y, w, d] = axis === 'x' ? [a0, at - dep, len, dep] : [at - dep, a0, dep, len];
-      const front = it.front ?? (axis === 'x' ? 'L' : 'R');
+      const [x, y, w, d] =
+        facing === 'W' ? [a0, at - dep, len, dep] : facing === 'E' ? [a0, at, len, dep] :
+        facing === 'S' ? [at - dep, a0, dep, len] : [at, a0, dep, len];
+      const front = it.front ?? facing;
       let h: number;
       if (it.pizza) {
         const { id, ...po } = it.pizza;
         const r = fromLot(it.lot, { g0: 2.75, ground: 'custom', ...it, front });
         h = r.h;
-        this.pizza(id, x, y, w, d, h, r.c, { front: axis === 'x' ? 'L' : 'R', ...po, b: { ...r.opts, ...po.b } });
+        this.pizza(id, x, y, w, d, h, r.c, { front: facing, ...po, b: { ...r.opts, ...po.b } });
       } else h = this.lot(it.lot, x, y, w, d, { ...it, front });
       out.push({ x, y, w, d, h, lot: it.lot });
       cur += dir * len;
@@ -182,7 +243,20 @@ export class Tile {
     return out;
   }
 
-  /* movers */
+  /** One side of a street from real lots (in walking order), facades facing `facing` on the line `at`. */
+  face(lots: Lot[], facing: Dir, at: number, from: number, to: number, o: FaceOpts): Placed[] {
+    const scale = o.fit ? Math.abs(to - from) / lots.reduce((s, l) => s + frontage(l.front ?? 25), 0) : 1;
+    const items: RowItem[] = lots.map(l => ({
+      lot: l,
+      front: facing + (o.corners?.[l.num] ?? ''),
+      ...(o.fit && { width: frontage(l.front ?? 25) * scale }),
+      ...(l.place && o.pizzas?.[l.place] && { pizza: { id: l.place, ...o.pizzas[l.place] } }),
+      ...o.over?.[l.num],
+    }));
+    return this.row(facing, at, from, to, items, o.depth);
+  }
+
+  /* movers (world coords; the map projects them through the current view rotation) */
   car(axis: Axis, a: number, b: number, c: number, speed: number, color: string, o: CarOpts = {}) {
     this.movers.push({ kind: 'car', axis, a, b, c, speed, svg: carSVG(axis, color, o), hw: axis === 'x' ? 0.75 : 0.39, hd: axis === 'x' ? 0.39 : 0.75, p: rr(0, Math.abs(b - a)), z: o.z || 0, onTop: o.onTop, x0: 0, y0: 0, x1: 0, y1: 0 });
   }

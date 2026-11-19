@@ -1,10 +1,11 @@
-/* Assembly & depth sorting: builds every tile, sorts back-to-front and mounts the SVG DOM. */
+/* Assembly & depth sorting: builds every tile for the current view rotation, sorts back-to-front
+   and mounts the SVG DOM. Rebuilt from scratch whenever the view rotates. */
 import { PLACES, HOODS, HOOD_IDS, type HoodId, type Place } from '../data/places';
-import { INK, reseed, rr, iso, poly, box, esc } from './iso';
+import { INK, reseed, rr, iso, iso0, rot, rotBox, rotAABB, poly, box, esc } from './iso';
 import { boatSVG, cloudSVG } from './parts';
-import { Tile, type AABB, type Mover } from './tile';
+import type { Tile, AABB, Mover, PinInfo } from './tile';
 import { bridgeSVG, BRIDGE_BOUNDS } from './bridge';
-import { waterSVG, WATER_BOUNDS } from './water';
+import { waterSVG, WATER_BOUNDS, BOATS } from './water';
 import { buildMidtown } from './hoods/midtown';
 import { buildVillage } from './hoods/village';
 import { buildFidi } from './hoods/fidi';
@@ -12,6 +13,8 @@ import { buildDumbo } from './hoods/dumbo';
 import { buildHoboken } from './hoods/hoboken';
 import { buildMidwood } from './hoods/midwood';
 import { buildLiberty } from './hoods/liberty';
+
+const BUILDERS = [buildMidtown, buildVillage, buildFidi, buildDumbo, buildHoboken, buildMidwood, buildLiberty];
 
 const NS = 'http://www.w3.org/2000/svg';
 export function el(tag: string, attrs: Record<string, string> = {}, html?: string) {
@@ -22,7 +25,7 @@ export function el(tag: string, attrs: Record<string, string> = {}, html?: strin
 }
 
 const EPS = 1e-6;
-/** -1: a behind b, 1: b behind a, 0: no constraint */
+/** -1: a behind b, 1: b behind a, 0: no constraint (view-space boxes) */
 function rel(a: AABB, b: AABB) {
   const aB = a.x1 <= b.x0 + EPS || a.y1 <= b.y0 + EPS, bB = b.x1 <= a.x0 + EPS || b.y1 <= a.y0 + EPS;
   if (aB && !bB) return -1; if (bB && !aB) return 1;
@@ -63,18 +66,18 @@ export function moverIndex(m: AABB, list: (AABB & { node?: Element })[]) {
 }
 
 export interface TopItem extends AABB { node: Element }
-export interface PinObj { p: Place; node: SVGGElement; g: SVGGElement; sx: number; sy: number; wy: number }
+export interface PinObj { p: Place; info: PinInfo; node: SVGGElement; g: SVGGElement; sx: number; sy: number; depth: number }
 export interface LabelObj { id: HoodId; node: SVGGElement; sx: number; sy: number; w: number }
 export interface Cloud { n: Element; x: number; y: number; ph: number }
 
 export interface Scene {
   tiles: Tile[]; tileById: Record<string, Tile>; topSorted: TopItem[];
-  boats: Mover[]; clouds: Cloud[]; pinObjs: PinObj[]; labelObjs: LabelObj[];
+  boats: Mover[]; clouds: Cloud[]; pinObjs: PinObj[]; labelObjs: LabelObj[]; pins: Record<string, PinInfo>;
 }
 export interface SceneLayers { scene: Element; sky: Element; labels: Element; pins: Element }
 
-/** Which corner each neighborhood label hangs from. */
-const LABEL_AT: Record<HoodId, 'left' | 'top' | 'bottom'> = { hoboken: 'bottom', midtown: 'top', village: 'left', fidi: 'left', dumbo: 'top', midwood: 'bottom' };
+/** Which corner of the tile (on screen) each neighborhood label hangs from. */
+const LABEL_AT: Record<HoodId, 'left' | 'top' | 'bottom'> = { hoboken: 'left', midtown: 'top', village: 'left', fidi: 'bottom', dumbo: 'top', midwood: 'bottom' };
 
 const sliceIcon = `<path d="M-5.2 -29.2 Q0 -31.6 5.2 -29.2 L0 -18.4 Z" fill="#f6c453" stroke-width="1"/><path d="M-5.4 -29.4 Q0 -32 5.4 -29.4" fill="none" stroke="#c9813c" stroke-width="2"/><circle cx="-1.4" cy="-26.4" r="1.25" fill="#d9473a" stroke="none"/><circle cx="1.6" cy="-24.6" r="1.1" fill="#d9473a" stroke="none"/><circle cx="-.2" cy="-22.2" r=".95" fill="#d9473a" stroke="none"/>`;
 function pinHTML(p: Place) {
@@ -88,25 +91,31 @@ function pinHTML(p: Place) {
   <g class="tag" transform="translate(17,-34)"><rect x="0" y="0" width="${tw}" height="20" rx="10" fill="#fffaf1" stroke-width="1.3"/><text x="${tw / 2}" y="10.5" text-anchor="middle" dominant-baseline="central" font-size="11" font-weight="700" font-family="DM Sans, Arial, sans-serif" fill="${INK}" stroke="none">${esc(p.name)}</text></g>`;
 }
 
-/** Build and mount the whole scene. Deterministic: reseeds the RNG first. */
-export function mountScene(L: SceneLayers): Scene {
+/** Screen corners of a tile's slab in the current view: [back, right, front, left]. */
+export function tileCorners(t: Tile, z = 0) {
+  const [x, y, w, d] = rotBox(t.x0, t.y0, t.W, t.D);
+  return { back: iso0(x, y, z), right: iso0(x + w, y, z), front: iso0(x + w, y + d, z), left: iso0(x, y + d, z), box: [x, y, w, d] as const };
+}
+
+/** Build and mount the whole scene for the current view rotation. Deterministic: reseeds the RNG first. */
+export function mountScene(L: SceneLayers, intro: boolean): Scene {
   reseed();
-  const tiles = [buildMidtown(), buildVillage(), buildFidi(), buildDumbo(), buildHoboken(), buildMidwood(), buildLiberty()];
+  const tiles = BUILDERS.map(b => b());
   const tileById: Record<string, Tile> = {}; tiles.forEach(t => (tileById[t.id] = t));
-  const PIN: Record<string, [number, number, number]> = {}; tiles.forEach(t => Object.assign(PIN, t.pins));
-  for (const p of PLACES) if (!PIN[p.id]) throw new Error(`No pizza(...) call registers a pin for place "${p.id}"`);
+  const pins: Record<string, PinInfo> = {}; tiles.forEach(t => Object.assign(pins, t.pins));
+  for (const p of PLACES) if (!pins[p.id]) throw new Error(`No pizza(...) call registers a pin for place "${p.id}"`);
 
   // top-level statics
-  const TOPL: TopItem[] = [{ node: el('g', { class: 'water' }, waterSVG()), ...WATER_BOUNDS }];
+  const TOPL: TopItem[] = [{ node: el('g', { class: 'water' }, waterSVG()), ...rotAABB(WATER_BOUNDS) }];
   tiles.forEach((t, i) => {
     const g = el('g', { class: 'tile' + (t.hood ? ' hood' : ''), 'data-hood': t.hood || '' }) as SVGGElement;
     const lift = el('g', { class: 'lift' }) as SVGGElement;
-    lift.style.animationDelay = (0.15 + i * 0.13).toFixed(2) + 's';
+    if (intro) lift.style.animationDelay = (0.15 + i * 0.13).toFixed(2) + 's';
     const sorted = topo(t.items);
-    const X0 = t.x0, Y0 = t.y0, T = t.T, th = t.thick;
-    const sh = [iso(X0, Y0, -th), iso(X0 + T, Y0, -th), iso(X0 + T, Y0 + T, -th), iso(X0, Y0 + T, -th)].map(p => [p[0], p[1] + 9] as [number, number]);
+    const c = tileCorners(t, -t.thick);
+    const sh = [c.back, c.right, c.front, c.left].map(p => [p[0], p[1] + 9] as [number, number]);
     let html = poly(sh, 'rgba(70,55,30,.08)', 'stroke="none"');
-    html += box(X0, Y0, -th, T, T, th, t.slab, { top: t.slab, L: '#e8dfcd', R: '#d8ccb4' });
+    html += box(t.x0, t.y0, -t.thick, t.W, t.D, t.thick, t.slab, { top: t.slab, L: '#e8dfcd', R: '#d8ccb4' });
     html += t.gnd.join('');
     html += '<g class="objs">' + sorted.map(it => '<g>' + it.svg + '</g>').join('') + '</g>';
     lift.innerHTML = html; g.appendChild(lift);
@@ -114,21 +123,17 @@ export function mountScene(L: SceneLayers): Scene {
     t.objs = objs; sorted.forEach((it, k) => (it.node = objs.children[k])); t.sorted = sorted;
     t.movers.forEach(m => { m.node = el('g', {}, m.svg); m.idx = -1; objs.appendChild(m.node); m.len = Math.abs(m.b - m.a); m.dir = Math.sign(m.b - m.a) || 1; });
     t.node = g;
-    TOPL.push({ node: g, x0: X0, x1: X0 + T, y0: Y0, y1: Y0 + T });
+    const [x, y, w, d] = c.box;
+    TOPL.push({ node: g, x0: x, x1: x + w, y0: y, y1: y + d });
   });
-  TOPL.push({ node: el('g', { class: 'bridge' }, bridgeSVG()), ...BRIDGE_BOUNDS });
+  TOPL.push({ node: el('g', { class: 'bridge' }, bridgeSVG()), ...rotAABB(BRIDGE_BOUNDS) });
   const topSorted = [TOPL[0], ...topo(TOPL.slice(1))];
   topSorted.forEach(o => L.scene.appendChild(o.node));
 
   // boats (top-level movers)
-  const boats: Mover[] = ([
-    { svg: boatSVG('tour'), axis: 'x', a: -6, b: 68, c: 43.2, speed: 1.5, hw: 1.4, hd: 0.5 },
-    { svg: boatSVG('tug'), axis: 'x', a: 55, b: -6, c: 39.4, speed: 1.2, hw: 0.8, hd: 0.4 },
-    { svg: boatSVG('tour'), axis: 'x', a: -4, b: 68, c: 18.2, speed: 1.3, hw: 1.4, hd: 0.5 },
-    { svg: boatSVG('ferry'), axis: 'y', a: 15.5, b: 34, c: 62, speed: 1.1, hw: 0.65, hd: 1.8 },
-  ] as const).map(b => {
+  const boats: Mover[] = BOATS.map(b => {
     const len = Math.abs(b.b - b.a);
-    const m: Mover = { ...b, kind: 'car', node: el('g', {}, b.svg), idx: -1, len, dir: Math.sign(b.b - b.a), p: rr(0, len), z: 0, x0: 0, y0: 0, x1: 0, y1: 0 };
+    const m: Mover = { ...b, svg: boatSVG(b.kind), kind: 'car', node: el('g', {}, boatSVG(b.kind)), idx: -1, len, dir: Math.sign(b.b - b.a), p: rr(0, len), z: 0, x0: 0, y0: 0, x1: 0, y1: 0 };
     L.scene.appendChild(m.node!);
     return m;
   });
@@ -138,21 +143,21 @@ export function mountScene(L: SceneLayers): Scene {
     const n = el('g', {}, cloudSVG(w)); L.sky.appendChild(n); return { n, x: p[0], y: p[1], ph: i * 1.7 };
   });
 
-  // pins
+  // pins, back to front
   const pinObjs: PinObj[] = PLACES.map((p, i) => {
-    const w = PIN[p.id]; const s = iso(w[0], w[1], w[2]);
+    const info = pins[p.id], [wx, wy, wz] = info.at, s = iso(wx, wy, wz), [vx, vy] = rot(wx, wy);
     const outer = el('g') as SVGGElement;
     const g = el('g', { class: 'pin', 'data-id': p.id, tabindex: '0', role: 'button', 'aria-label': `${p.name}, ${HOODS[p.hood].name}` }, pinHTML(p)) as SVGGElement;
-    const inner = el('g', { class: 'pins-in' }) as SVGGElement; inner.style.animationDelay = (1.2 + i * 0.07).toFixed(2) + 's';
+    const inner = el('g', { class: 'pins-in' }) as SVGGElement; if (intro) inner.style.animationDelay = (1.2 + i * 0.07).toFixed(2) + 's';
     inner.appendChild(g); outer.appendChild(inner);
-    return { p, node: outer, g, sx: s[0], sy: s[1], wy: w[0] + w[1] };
-  }).sort((a, b) => a.wy - b.wy);
+    return { p, info, node: outer, g, sx: s[0], sy: s[1], depth: vx + vy };
+  }).sort((a, b) => a.depth - b.depth);
   pinObjs.forEach(o => L.pins.appendChild(o.node));
 
   // neighborhood labels
   const labelObjs: LabelObj[] = HOOD_IDS.map(id => {
     const t = tileById[id], h = HOODS[id], n = PLACES.filter(p => p.hood === id).length, where = LABEL_AT[id];
-    const c = where === 'left' ? iso(t.x0, t.y0 + t.T, -0.4) : where === 'top' ? iso(t.x0, t.y0, t.top * 0.72) : iso(t.x0 + t.T, t.y0 + t.T, -t.thick);
+    const c = where === 'left' ? tileCorners(t, -0.4).left : where === 'top' ? tileCorners(t, t.top * 0.72).back : tileCorners(t, -t.thick).front;
     const w = Math.max(h.name.length * 9.2 + 30, (h.sub.length + 10) * 6.2 + 30);
     const off = where === 'left' ? `${-w - 16},-19` : where === 'top' ? `${-w / 2},-60` : `${-w / 2},20`;
     const lead = where === 'left' ? 'M-16 0H-3' : where === 'top' ? 'M0 -20V-3' : 'M0 3V20';
@@ -166,5 +171,5 @@ export function mountScene(L: SceneLayers): Scene {
     return { id, node: g, sx: c[0], sy: c[1], w };
   });
 
-  return { tiles, tileById, topSorted, boats, clouds, pinObjs, labelObjs };
+  return { tiles, tileById, topSorted, boats, clouds, pinObjs, labelObjs, pins };
 }

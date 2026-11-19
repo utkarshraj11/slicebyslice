@@ -3,6 +3,7 @@
 import { useSyncExternalStore } from 'react';
 import { PLACES, HOODS, TOUR, isHood, type HoodId } from './data/places';
 import type { MapHandle, MapView } from './engine/map';
+import { rotShowing, visibleAt } from './engine/iso';
 
 export interface State {
   mode: 'overview' | 'hood';
@@ -11,8 +12,10 @@ export interface State {
   listOpen: boolean;
   listBy: 'hood' | 'rank';
   touring: boolean;
+  /** view rotation, quarter turns (0 = from the south-west) */
+  rot: number;
 }
-let state: State = { mode: 'overview', curHood: null, curPlace: null, listOpen: false, listBy: 'hood', touring: false };
+let state: State = { mode: 'overview', curHood: null, curPlace: null, listOpen: false, listBy: 'hood', touring: false, rot: 0 };
 const subs = new Set<() => void>();
 const set = (patch: Partial<State>) => { state = { ...state, ...patch }; subs.forEach(f => f()); };
 const subscribe = (f: () => void) => { subs.add(f); return () => subs.delete(f); };
@@ -22,7 +25,7 @@ export const useStore = () => useSyncExternalStore(subscribe, getState);
 /* ---------- map hookup ---------- */
 let map: MapHandle | null = null;
 export const attachMap = (m: MapHandle | null) => { map = m; };
-export const mapView = (): MapView => ({ mode: state.mode, curHood: state.curHood, panelOpen: !!(state.curPlace || state.listOpen) });
+export const mapView = (): MapView => ({ mode: state.mode, curHood: state.curHood, curPlace: state.curPlace, panelOpen: !!(state.curPlace || state.listOpen) });
 const refit = (dur?: number) => map?.refit(dur);
 
 /* ---------- hash routing: #<placeId> or #<hoodId> ---------- */
@@ -59,7 +62,30 @@ export function openPlace(id: string) {
   closeList(true);
   set({ curPlace: id });
   map?.setActivePin(id);
-  setMode('hood', p.hood); refit(1200); setHash(id);
+  setMode('hood', p.hood);
+  // turn the map so the storefront faces the viewer
+  const need = map ? rotShowing(map.facing(id), state.rot) : state.rot;
+  if (map && need !== state.rot) { set({ rot: need }); void map.setRotation(need); }
+  else refit(1200);
+  setHash(id);
+}
+
+/* ---------- view rotation ---------- */
+export function setRotation(k: number) {
+  k = ((k % 4) + 4) % 4;
+  if (k === state.rot) return;
+  set({ rot: k });
+  void map?.setRotation(k);
+}
+/** +1 turns the map a quarter turn counter-clockwise (the camera orbits clockwise). */
+export const rotate = (delta: number) => setRotation(state.rot + delta);
+/** The rotation (closest to the current one) that shows the most storefronts in a neighborhood. */
+function bestRot(hood: HoodId) {
+  if (!map) return state.rot;
+  const sides = PLACES.filter(p => p.hood === hood).map(p => map!.facing(p.id));
+  let best = state.rot, bestN = -1;
+  for (const d of [0, 1, 3, 2]) { const k = (state.rot + d) % 4, n = sides.filter(s => visibleAt(s, k)).length; if (n > bestN) { bestN = n; best = k; } }
+  return best;
 }
 export function closeCard(silent?: boolean) {
   if (!state.curPlace) return;
@@ -88,7 +114,11 @@ export function startTour() {
   let i = 0;
   set({ touring: true });
   const step = () => {
-    if (i < TOUR.length) { focusHood(TOUR[i++], { dur: 1600 }); tourT = setTimeout(step, 4300); }
+    if (i < TOUR.length) {
+      const h = TOUR[i++], k = bestRot(h);
+      if (k !== state.rot) { set({ rot: k }); void map?.setRotation(k); }
+      focusHood(h, { dur: 1600 }); tourT = setTimeout(step, 4300);
+    }
     else { stopTour(); showOverview(); }
   };
   step();

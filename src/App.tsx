@@ -2,13 +2,14 @@ import { useEffect } from 'react';
 import { PLACES, HOOD_IDS } from './data/places';
 import {
   useStore, getState, routeHash, onHashChange, back, stepPlace, openPlace, stopTour,
-  showOverview, toggleTour, toggleList,
+  showOverview, toggleTour, toggleList, rotate,
 } from './store';
 import { MapView } from './components/MapView';
 import { ReviewCard } from './components/ReviewCard';
 import { ListPanel } from './components/ListPanel';
 import { HoodBar } from './components/HoodBar';
 import { Grain } from './components/Grain';
+import { Compass } from './components/Compass';
 import { FrameIcon, PlayIcon, StopIcon, ListIcon } from './components/icons';
 
 export default function App() {
@@ -22,6 +23,10 @@ export default function App() {
       if (getState().curPlace && (e.key === 'ArrowRight' || e.key === 'ArrowLeft')) stepPlace(e.key === 'ArrowRight' ? 1 : -1);
       const pin = e.target instanceof Element ? e.target.closest<SVGGElement>('.pin') : null;
       if ((e.key === 'Enter' || e.key === ' ') && pin) { e.preventDefault(); stopTour(); openPlace(pin.dataset.id!); }
+      if (!e.metaKey && !e.ctrlKey && !e.altKey && !(e.target instanceof HTMLInputElement)) {
+        if (e.key === 'q' || e.key === 'Q') rotate(1);
+        if (e.key === 'e' || e.key === 'E') rotate(-1);
+      }
     };
     window.addEventListener('hashchange', onHashChange);
     document.addEventListener('keydown', onKey);
@@ -46,7 +51,8 @@ export default function App() {
         <button className="btn primary" onClick={toggleList}><ListIcon />All {PLACES.length} spots</button>
       </div>
 
-      <div className="hint">Drag to pan · scroll or pinch to zoom · click a neighborhood</div>
+      <div className="hint">Drag to pan · scroll or pinch to zoom · Q / E to rotate · click a neighborhood</div>
+      <Compass rot={s.rot} />
       <HoodBar hood={s.mode === 'hood' ? s.curHood : null} curPlace={s.curPlace} />
       <ReviewCard placeId={s.curPlace} />
       <ListPanel open={s.listOpen} by={s.listBy} />

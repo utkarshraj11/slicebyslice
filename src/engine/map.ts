@@ -1,11 +1,12 @@
-/* The live map: mounts the scene into an <svg>, runs the camera, pointer input and animation loop.
+/* The live map: mounts the scene into an <svg>, runs the camera, pointer input and animation loop,
+   rebuilds the scene when the view rotates, and x-rays whatever stands in front of the open pizzeria.
    UI state lives outside (store.ts); the map reads it through `getView` and reports taps via callbacks. */
 import type { HoodId } from '../data/places';
-import { iso, f1 } from './iso';
-import { mountScene, moverIndex, type SceneLayers, type TopItem } from './scene';
+import { type Dir, iso, iso0, rot, f1, setRot, getRot } from './iso';
+import { mountScene, moverIndex, tileCorners, type Scene, type SceneLayers, type TopItem } from './scene';
 import type { Tile, Mover, Item } from './tile';
 
-export interface MapView { mode: 'overview' | 'hood'; curHood: HoodId | null; panelOpen: boolean }
+export interface MapView { mode: 'overview' | 'hood'; curHood: HoodId | null; curPlace: string | null; panelOpen: boolean }
 export interface MapCallbacks {
   getView(): MapView;
   onPin(id: string): void;
@@ -18,13 +19,19 @@ export interface MapHandle {
   refit(dur?: number): void;
   setActivePin(id: string | null): void;
   setOverview(on: boolean): void;
+  /** Rebuild the scene for view rotation k (quarter turns). Resolves once the new view is in place. */
+  setRotation(k: number): Promise<void>;
+  /** Compass side a pizzeria's storefront faces. */
+  facing(id: string): Dir;
   destroy(): void;
 }
 interface Cam { cx: number; cy: number; w: number }
 interface Bounds { x0: number; x1: number; y0: number; y1: number }
 
-export function createMap(svg: SVGSVGElement, layers: SceneLayers, cb: MapCallbacks): MapHandle {
-  const { tiles, tileById, topSorted, boats, clouds, pinObjs, labelObjs } = mountScene(layers);
+export function createMap(svg: SVGSVGElement, layers: SceneLayers, cb: MapCallbacks, initialRot = 0): MapHandle {
+  setRot(initialRot);
+  let sc: Scene = mountScene(layers, true);
+  let activeId: string | null = null, overview = true;
 
   /* ---------- camera ---------- */
   let W = innerWidth, H = innerHeight;
@@ -33,12 +40,13 @@ export function createMap(svg: SVGSVGElement, layers: SceneLayers, cb: MapCallba
   const isMobile = () => W < 760;
 
   function tileBounds(t: Tile): Bounds {
-    const P = [iso(t.x0, t.y0, 0), iso(t.x0 + t.T, t.y0, 0), iso(t.x0 + t.T, t.y0 + t.T, -t.thick), iso(t.x0, t.y0 + t.T, -t.thick), iso(t.x0, t.y0, t.top), iso(t.x0 + t.T, t.y0, t.top * 0.6), iso(t.x0, t.y0 + t.T, t.top * 0.6)];
+    const lo = tileCorners(t, -t.thick), hi = tileCorners(t, t.top), mid = tileCorners(t, t.top * 0.6);
+    const P = [lo.right, lo.front, lo.left, tileCorners(t, 0).back, hi.back, mid.right, mid.left];
     return { x0: Math.min(...P.map(p => p[0])), x1: Math.max(...P.map(p => p[0])), y0: Math.min(...P.map(p => p[1])), y1: Math.max(...P.map(p => p[1])) };
   }
   function overviewBounds(): Bounds {
     // On phones the whole-map view frames only Manhattan + Brooklyn; Hoboken and Midwood peek in.
-    const bs = (isMobile() ? ['midtown', 'village', 'fidi', 'dumbo'].map(id => tileById[id]) : tiles).map(tileBounds);
+    const bs = (isMobile() ? ['midtown', 'village', 'fidi', 'dumbo'].map(id => sc.tileById[id]) : sc.tiles).map(tileBounds);
     const b = { x0: Math.min(...bs.map(b => b.x0)), x1: Math.max(...bs.map(b => b.x1)), y0: Math.min(...bs.map(b => b.y0)), y1: Math.max(...bs.map(b => b.y1)) };
     if (isMobile()) { b.x0 -= 150; b.x1 += 10; b.y0 -= 60; return b; }
     b.x0 -= 60; b.y0 -= 150; b.y1 += 40; return b;
@@ -47,7 +55,8 @@ export function createMap(svg: SVGSVGElement, layers: SceneLayers, cb: MapCallba
   function occlusion() {
     const v = cb.getView();
     if (isMobile()) return { top: v.mode === 'overview' ? 118 : 96, right: 0, bottom: v.panelOpen ? H * 0.62 : v.mode === 'hood' ? 118 : 70, left: 0 };
-    return { top: v.mode === 'overview' ? 150 : 84, right: v.panelOpen ? 440 : 0, bottom: v.mode === 'hood' ? 78 : 40, left: 0 };
+    // in the whole-map view, keep room on the left for neighborhood labels hanging off tile corners
+    return { top: v.mode === 'overview' ? 150 : 84, right: v.panelOpen ? 440 : 0, bottom: v.mode === 'hood' ? 78 : 40, left: v.mode === 'overview' ? 170 : 0 };
   }
   function fit(b: Bounds, pad = 0.06): Cam {
     const o = occlusion(); const aw = Math.max(200, W - o.right - o.left), ah = Math.max(200, H - o.top - o.bottom);
@@ -60,8 +69,8 @@ export function createMap(svg: SVGSVGElement, layers: SceneLayers, cb: MapCallba
     svg.setAttribute('viewBox', `${(cam.cx - cam.w / 2).toFixed(1)} ${(cam.cy - h / 2).toFixed(1)} ${cam.w.toFixed(1)} ${h.toFixed(1)}`);
     const k = cam.w / W;
     const mf = isMobile() ? 0.72 : 1, ps = Math.min(4.2, Math.max(0.32, k * 0.95 * mf)), ls = ps;
-    for (const o of pinObjs) o.node.setAttribute('transform', `translate(${f1(o.sx)},${f1(o.sy)}) scale(${ps.toFixed(3)})`);
-    for (const o of labelObjs) o.node.setAttribute('transform', `translate(${f1(o.sx)},${f1(o.sy)}) scale(${ls.toFixed(3)})`);
+    for (const o of sc.pinObjs) o.node.setAttribute('transform', `translate(${f1(o.sx)},${f1(o.sy)}) scale(${ps.toFixed(3)})`);
+    for (const o of sc.labelObjs) o.node.setAttribute('transform', `translate(${f1(o.sx)},${f1(o.sy)}) scale(${ls.toFixed(3)})`);
     svg.classList.toggle('near', k < 1.25);
   }
   const flyTo = (to: Cam, dur = 1250) => { camAnim = { from: { ...cam }, to, t0: performance.now(), dur }; };
@@ -73,12 +82,36 @@ export function createMap(svg: SVGSVGElement, layers: SceneLayers, cb: MapCallba
     cam.w = Math.exp(Math.log(a.from.w) + (Math.log(a.to.w) - Math.log(a.from.w)) * e) * bump;
     if (u >= 1) camAnim = null; applyCam();
   }
+  /** Screen bounds of the neighbourhood of a pizzeria: a world box around it, up to rooftop height. */
+  function placeBounds(id: string): Bounds {
+    const [x, y] = sc.pins[id].at, r = 7.5, P: [number, number][] = [];
+    for (const [dx, dy] of [[-r, -r], [r, -r], [r, r], [-r, r]]) for (const z of [0, 7]) P.push(iso(x + dx, y + dy, z));
+    return { x0: Math.min(...P.map(p => p[0])), x1: Math.max(...P.map(p => p[0])), y0: Math.min(...P.map(p => p[1])), y1: Math.max(...P.map(p => p[1])) };
+  }
   function targetFor(): Cam {
     const v = cb.getView();
-    if (v.mode === 'hood' && v.curHood) { const t = fit(tileBounds(tileById[v.curHood]), 0.04); t.w = Math.max(t.w, W * 0.66); return t; }
+    if (v.curPlace && sc.pins[v.curPlace]) return fit(placeBounds(v.curPlace), 0.02);
+    if (v.mode === 'hood' && v.curHood) { const t = fit(tileBounds(sc.tileById[v.curHood]), 0.04); t.w = Math.max(t.w, W * 0.66); return t; }
     return fit(overviewBounds(), 0.02);
   }
   const minW = () => 380, maxW = () => fit(overviewBounds()).w * (isMobile() ? 2.6 : 1.8);
+
+  /* ---------- x-ray: fade whatever is drawn in front of the open pizzeria's storefront ---------- */
+  let xrayed: Element[] = [];
+  function xray() {
+    xrayed.forEach(n => n.classList.remove('xray')); xrayed = [];
+    const info = activeId ? sc.pins[activeId] : null;
+    if (!info?.focus || !info.item.node) return;
+    const f = info.focus, me = info.item.node;
+    const candidates: (Item | TopItem)[] = [...sc.tiles.flatMap(t => t.sorted), ...sc.topSorted.filter(o => o.node.classList.contains('bridge'))];
+    for (const it of candidates) {
+      const n = it.node;
+      if (!n || n === me || ('small' in it && it.small)) continue;
+      if (!(me.compareDocumentPosition(n) & Node.DOCUMENT_POSITION_FOLLOWING)) continue; // drawn before → behind
+      const b = (n as SVGGraphicsElement).getBBox();
+      if (b.x < f.x1 && b.x + b.width > f.x0 && b.y < f.y1 && b.y + b.height > f.y0) { n.classList.add('xray'); xrayed.push(n); }
+    }
+  }
 
   /* ---------- pointer: pan, pinch, tap ---------- */
   const ptrs = new Map<number, { x: number; y: number }>();
@@ -123,7 +156,7 @@ export function createMap(svg: SVGSVGElement, layers: SceneLayers, cb: MapCallba
     const f = Math.exp(e.deltaY * (e.ctrlKey ? 0.012 : 0.0016)); const m = toWorld(e.clientX, e.clientY);
     cam.w = Math.min(maxW(), Math.max(minW(), cam.w * f)); cam.cx = m[0] - ((e.clientX - W / 2) * cam.w) / W; cam.cy = m[1] - ((e.clientY - H / 2) * cam.w) / W; applyCam();
   };
-  const onResize = () => { W = innerWidth; H = innerHeight; const t = targetFor(); Object.assign(cam, t); camAnim = null; applyCam(); };
+  const onResize = () => { W = innerWidth; H = innerHeight; Object.assign(cam, targetFor()); camAnim = null; applyCam(); };
   svg.addEventListener('pointerdown', onDown);
   svg.addEventListener('pointermove', onMove);
   svg.addEventListener('pointerup', onUp);
@@ -139,12 +172,14 @@ export function createMap(svg: SVGSVGElement, layers: SceneLayers, cb: MapCallba
     else { pos = t % len; op = Math.max(0, Math.min(1, pos / 0.9, (len - pos) / 0.9)); }
     const along = m.a + m.dir! * pos;
     const wx = x0 + (m.axis === 'x' ? along : m.c), wy = y0 + (m.axis === 'y' ? along : m.c);
-    const s = iso(wx, wy, m.z || 0);
+    const [vx, vy] = rot(wx, wy), odd = getRot() % 2 === 1;
+    const s = iso0(vx, vy, m.z || 0);
     const bob = m.kind === 'walk' ? -Math.abs(Math.sin(time * 7 + m.phase!)) * 1.3 : 0;
     const node = m.node as SVGGElement;
     node.setAttribute('transform', `translate(${f1(s[0])},${f1(s[1] + bob)})`);
     if (m.kind !== 'walk') node.style.opacity = op < 1 ? op.toFixed(2) : '';
-    m.x0 = wx - m.hw; m.x1 = wx + m.hw; m.y0 = wy - m.hd; m.y1 = wy + m.hd;
+    const hw = odd ? m.hd : m.hw, hd = odd ? m.hw : m.hd;
+    m.x0 = vx - hw; m.x1 = vx + hw; m.y0 = vy - hd; m.y1 = vy + hd;
     const idx = moverIndex(m, list);
     if (idx !== m.idx) { m.idx = idx; parent.insertBefore(node, list[idx]?.node ?? null); }
   }
@@ -153,11 +188,37 @@ export function createMap(svg: SVGSVGElement, layers: SceneLayers, cb: MapCallba
     const dt = Math.min(0.05, (now - last) / 1000); last = now; time += dt; frameN++;
     if (camAnim) stepCam(now);
     if (!reduce || frameN < 3) {
-      for (const t of tiles) for (const m of t.movers) { m.p += m.speed * dt; placeMover(m, t.sorted, t.objs!, t.x0, t.y0, time); }
-      for (const b of boats) { b.p += b.speed * dt; placeMover(b, topSorted, layers.scene, 0, 0, time); }
-      for (const c of clouds) c.n.setAttribute('transform', `translate(${f1(c.x + Math.sin(time * 0.12 + c.ph) * 40)},${f1(c.y)})`);
+      for (const t of sc.tiles) for (const m of t.movers) { m.p += m.speed * dt; placeMover(m, t.sorted, t.objs!, t.x0, t.y0, time); }
+      for (const b of sc.boats) { b.p += b.speed * dt; placeMover(b, sc.topSorted, layers.scene, 0, 0, time); }
+      for (const c of sc.clouds) c.n.setAttribute('transform', `translate(${f1(c.x + Math.sin(time * 0.12 + c.ph) * 40)},${f1(c.y)})`);
     }
     raf = requestAnimationFrame(frame);
+  }
+
+  /* ---------- rotation: fade, rebuild, frame the same thing, fade in ---------- */
+  let rebuilding: Promise<void> | null = null;
+  function setRotation(k: number): Promise<void> {
+    k = ((k % 4) + 4) % 4;
+    if (k === getRot() && !rebuilding) return Promise.resolve();
+    const run = async () => {
+      if (rebuilding) await rebuilding;
+      if (k === getRot()) return;
+      svg.classList.add('turning');
+      await new Promise(r => setTimeout(r, reduce ? 0 : 170));
+      for (const g of Object.values(layers)) g.replaceChildren();
+      setRot(k);
+      svg.classList.add('no-intro');
+      sc = mountScene(layers, false);
+      frameN = 0; xrayed = [];
+      svg.classList.toggle('ov', overview);
+      sc.pinObjs.forEach(o => o.g.classList.toggle('active', o.p.id === activeId));
+      camAnim = null; Object.assign(cam, targetFor()); applyCam();
+      xray();
+      requestAnimationFrame(() => svg.classList.remove('turning'));
+    };
+    const p = run().finally(() => { if (rebuilding === p) rebuilding = null; });
+    rebuilding = p;
+    return p;
   }
 
   /* ---------- start: drop in slightly zoomed out, then settle ---------- */
@@ -168,8 +229,14 @@ export function createMap(svg: SVGSVGElement, layers: SceneLayers, cb: MapCallba
 
   return {
     refit: (dur = 900) => flyTo(targetFor(), dur),
-    setActivePin: id => pinObjs.forEach(o => o.g.classList.toggle('active', o.p.id === id)),
-    setOverview: on => svg.classList.toggle('ov', on),
+    setActivePin: id => {
+      activeId = id;
+      sc.pinObjs.forEach(o => o.g.classList.toggle('active', o.p.id === id));
+      xray();
+    },
+    setOverview: on => { overview = on; svg.classList.toggle('ov', on); },
+    setRotation,
+    facing: id => sc.pins[id].facing,
     destroy() {
       cancelAnimationFrame(raf);
       svg.removeEventListener('pointerdown', onDown);

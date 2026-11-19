@@ -9,32 +9,33 @@ pnpm install
 pnpm dev        # dev server
 pnpm build      # typecheck + production build to dist/ (static, base './', host anywhere)
 pnpm typecheck
-pnpm lots <hood>   # refetch real building data for a neighborhood (NYC only), see "Real buildings"
+pnpm lots <hood>   # refetch real building data for a neighborhood (streets in tools/areas.mjs), see "Real buildings"
 ```
 
 ```
 index.html                 Vite entry (fonts + #root)
 src/data/places.ts         RATING_MAX, PLACES, HOODS, TOUR: the content
-src/data/lots.ts           Lot / BlockFace types + lot(face, houseNo) lookup
+src/data/lots.ts           Lot / Street types + lot(street, houseNo) and side(street, from, to) lookups
 src/data/lots/<hood>.ts    GENERATED real lot data per neighborhood (pnpm lots <hood>); don't hand-edit
-src/engine/iso.ts          iso math, seeded RNG, SVG-string primitives (box, faces, frect, ftext, cyl…)
+src/engine/iso.ts          iso math, view rotation, seeded RNG, SVG-string primitives (box, face(dir), frect, ftext, gtext, gableRoof…)
 src/engine/parts.ts        buildings, storefronts, trees, people, cars, boats, clouds
-src/engine/styles.ts       building styles (rowhouse, tenement, loft, prewar) + real lot → drawing params
+src/engine/styles.ts       building styles (rowhouse, tenement, loft, prewar, modern, frame) + real lot → drawing params
 src/engine/tile.ts         class Tile (builder API) + Item/Mover/AABB types
 src/engine/hoods/*.ts      one build<Neighborhood>() per tile (+ liberty decor)
-src/engine/bridge.ts       Brooklyn Bridge geometry + river span
+src/engine/bridge.ts       Brooklyn Bridge (BR world coords): river span + anchorage() for the two shore tiles
 src/engine/water.ts        water outline + waves
 src/engine/scene.ts        depth sorting (rel/topo/moverIndex), mounting tiles, pins, labels
-src/engine/map.ts          createMap(): camera, pointer/wheel/pinch, animation loop
+src/engine/map.ts          createMap(): camera, pointer/wheel/pinch, animation loop, rotation rebuild, x-ray
 src/store.ts               UI state + actions (openPlace, focusHood, tour…) + hash routing
-src/components/*.tsx       MapView, ReviewCard, ListPanel, HoodBar, Grain, icons
+src/components/*.tsx       MapView, ReviewCard, ListPanel, HoodBar, Compass, Grain, icons
 src/styles.css             all CSS
 public/photos/             put review photos here (empty for now)
 tools/preview.mjs          headless-Chrome screenshot/smoke-test script (Playwright)
-tools/fetch-lots.mjs       pulls NYC GeoSearch + PLUTO + Building Footprints into src/data/lots/<hood>.ts
+tools/areas.mjs            which real streets / house-number ranges each tile shows
+tools/fetch-lots.mjs       PLUTO + Building Footprints (NYC) or OpenStreetMap (Hoboken) → src/data/lots/<hood>.ts
 ```
 
-**React vs. engine split.** React renders only the chrome (header, buttons, card, list, hood bar) and an empty `<svg>` shell. The ~5k-element scene is built as SVG strings and mounted imperatively by `createMap()` in a `MapView` effect. Don't move the scene into JSX: per-frame mover re-slotting and the "never move tile nodes" rule depend on direct DOM control. State lives in `store.ts` (a tiny external store read with `useSyncExternalStore`), so the camera can read which panels are open synchronously when it refits. The map reports taps through callbacks, and the store calls `map.refit()`, `setActivePin()` and `setOverview()`. `mountScene()` reseeds the RNG, so builds are deterministic (and React StrictMode's double mount is harmless; `destroy()` empties the layers).
+**React vs. engine split.** React renders only the chrome (header, buttons, card, list, hood bar) and an empty `<svg>` shell. The ~12k-element scene is built as SVG strings and mounted imperatively by `createMap()` in a `MapView` effect. Don't move the scene into JSX: per-frame mover re-slotting and the "never move tile nodes" rule depend on direct DOM control. State lives in `store.ts` (a tiny external store read with `useSyncExternalStore`), so the camera can read which panels are open synchronously when it refits. The map reports taps through callbacks, and the store calls `map.refit()`, `setActivePin()`, `setOverview()` and `setRotation()`. `mountScene()` reseeds the RNG, so builds are deterministic (and React StrictMode's double mount is harmless; `destroy()` empties the layers).
 
 ---
 
@@ -46,7 +47,9 @@ tools/fetch-lots.mjs       pulls NYC GeoSearch + PLUTO + Building Footprints int
 - The owner said they "have changes". Ask what they are before refactoring anything.
 - A previous version is published as a claude.ai artifact. That copy won't update automatically. Host `dist/` anywhere static, such as GitHub Pages, Netlify or Vercel.
 - Known pre-existing quirk (also in the original): on mobile the hidden, empty neighborhood bar peeks out as a small blob above the bottom buttons.
-- **Realism pilot (Nov 2026): only the West Village is built from real lot data.** DUMBO's two warehouses use the `loft` style; every other tile still uses the original invented buildings (`bld()`), so the Village is denser and taller than its neighbours until the rollout. Rollout order and open bits: Midtown/FiDi (`prewar`, `tenement`), DUMBO (`loft`), Midwood (needs a frame-house style), Hoboken (not in PLUTO: needs OpenStreetMap), Federal attic storeys with dormers (`floors` like 2.5) aren't drawn yet.
+- **Every neighborhood is built from real data on its real street layout (Nov 2026)**, schematic: real streets in real order, each pizzeria on its real block and side of the street, real neighbours and nearby landmarks; long stretches between clusters are shortened. Each hood file's header comment says what's real and what's composite. The owner asked for this ("Benny Tudino's is on the other side of Basile's", "Panello is on a different block", "riverfront behind Benny's", "a basketball court across the road from Joe's").
+- **Hoboken floors are estimates**: OSM has footprints and addresses but no storey counts or dates there; missing addresses are filled with typical brownstones.
+- Still invented, not data: Midtown's buildings east of 8th Ave, FiDi's Pine St towers, the Midtown and Times Square fillers, the north-of-Avenue-J houses in Midwood (real houses from two blocks north).
 
 ---
 
@@ -102,110 +105,84 @@ The owner's original list had misspellings (for example "Di Farra" and "Carmaine
 6. **Camera, input, animation loop** (`engine/map.ts`): viewBox pan/zoom/fly-to/framing; pointer, wheel, pinch; cars, walkers, boats, the train and clouds.
 7. **UI** (`src/store.ts`, `src/App.tsx`, `src/components/`): review card, list panel, neighborhood bar, tour, hash routing, keyboard.
 
-### Coordinate system (read this before drawing anything)
+### Coordinate system and view rotation (read this before drawing anything)
 
 ```js
 const S = 22, CX = cos(30°), HY = .5;
-iso(x, y, z) => [(x - y) * CX * S, (x + y) * HY * S - z * S]   // world → SVG user units
+iso0(x, y, z) => [(x - y) * CX * S, (x + y) * HY * S - z * S]   // view coords → SVG user units
+iso(x, y, z)  => iso0(...rot(x, y), z)                           // world coords (what you normally use)
 ```
 
-- **+x = south** (down-right on screen), **+y = west** (down-left), **+z = up**. One unit is about one storey's width, and a storey is about 1.1 units tall in the original tiles. Real-data buildings use `FT = 0.08` units per foot (a storey ≈ 0.9 units); see "Real buildings".
-- The viewer looks from the +x/+y side. For a box `[x,x+w]×[y,y+d]×[z,z+h]`, the only visible faces are:
-  - **L face** at `y+d`, facing +y, on the screen's lower-left (`faceL`)
-  - **R face** at `x+w`, facing +x, on the screen's lower-right (`faceR`)
-  - the top
-- **A storefront must sit on an L or R face to be visible.** Put shops on the *far* side of a street so they face the viewer across it.
-- Face helpers: `F.at(u, v, out)` maps face-local `u` (along the face, left to right on screen), `v` (height) and `out` (offset outward) to screen. `frect(F, …)` and `ftext(F, …)` draw a rectangle or skewed text on a face.
+- **World: +x = south, +y = west, +z = up** (Manhattan's grid; each tile snaps its own street grid to it: the Village to Bleecker St, Hoboken to Washington St, DUMBO and Midwood to true north). One unit ≈ 12.5 ft (`FT = 0.08`); a storey ≈ 0.9 units.
+- **The view rotates in 90° steps** (`setRot(k)`, k = 0 looks from the south-west; 1 from the north-west; 2 north-east; 3 south-east). `rot()` turns world coords into view coords before projection. Rotating **rebuilds the whole scene** (`map.setRotation`, behind a short fade), so all geometry is computed per rotation, never cached across one.
+- **Draw by compass side, never by screen side.** `face(x,y,z,w,d, dir)` returns the face on world side `dir` (`'N' | 'E' | 'S' | 'W'`), with `hidden: true` when it points away from the viewer; `frect`, `ftext`, `storefront`, `awning`, `fireEscape` draw nothing on hidden faces. `faceL`/`faceR` are legacy aliases for the W and S faces. `box()` rotates itself. `visibleFaces()` gives the (two) faces you can see. `gableRoof()` and `viewSide()` handle roofs and other view-dependent pieces.
+- **A face's `u` runs left→right as seen standing in front of that facade**, whatever the rotation: W face from north to south, E from south to north, S from west to east, N from east to west. So storefront positions (`u0`/`u1`) never change with rotation.
+- Ground text that reads from any side: `gtext()` / `t.streetName()`; `road(..., {name})` paints the street name.
 
 ### World layout (world coordinates)
 
-| Tile | x0 | y0 | size T | Notes |
+| Tile | x0 | y0 | size (x × y) | Street spine / notes |
 |---|---|---|---|---|
-| midtown | 0 | 22 | 16 | 8th Ave runs along x; 38th St along y; Columbus Circle; Empire State Building in the back-right corner |
-| village | 20 | 22 | 16 | Bleecker St along x, Christopher St (cobblestones) along y, Carmine St |
-| fidi | 40 | 22 | 16 | Wall St along y; Broad St plaza; stock exchange; Federal Hall; Brooklyn Bridge anchorage |
-| dumbo | 40 | -2 | 16 | Water St (cobblestones); bridge anchorage and deck; carousel |
-| hoboken | -2 | 45 | 16 | Waterfront promenade, Washington St, Monroe St, terminal clock tower |
-| midwood | 60 | -4 | 10 | Avenue J, Q train embankment, small houses |
-| liberty | 60 | 36 | 6 | Decoration only: Statue of Liberty island, no pins |
+| midtown | 0 | 4 | 34 × 30 | 8th Ave along x; Columbus Circle, Pop's, Hearst Tower; (shortened) Times Square, Port Authority; W 39th/38th lofts, Lazzara's; ESB backdrop |
+| village | 40 | 4 | 46 × 36 | Bleecker St along x (Christopher → Carmine); 6th Ave and the West 4th St courts on the east |
+| fidi | 88 | 4 | 24 × 35 | Wall St along y (Broad → South St); NYSE, Federal Hall, Hanover Sq; bridge's Manhattan anchorage |
+| hoboken | 40 | 47 | 44 × 38 | Washington St along x (8th → Newark); riverfront on the east edge; Monroe St on the west |
+| dumbo | 88 | -30 | 22 × 20 | Water/Front St along y, Old Fulton along x; park and bridge's Brooklyn anchorage on the north |
+| midwood | 118 | -46 | 16 × 16 | Avenue J along y, E 15th/16th along x; the B/Q in an open cut |
+| liberty | 116 | 36 | 6 | Decoration only: Statue of Liberty island, no pins |
 
-- Manhattan tiles sit along the x axis with 4-unit gaps between them.
-- **East River**: y 14–22. **Hudson**: y 38–46. **Bay**: x 56–70. The outline is in `WATER`, and `WATER_RECTS` is used to scatter wave marks.
-- **Brooklyn Bridge**: world x 41.5–43.5, towers at y `T1=15.3` and `T2=20.7`, cable height from `cableZ(y)`. It's split into three parts:
-  - the DUMBO-side anchorage and deck: items in `buildDumbo`
-  - the river span: `bridgeSVG()`, a top-level item
-  - the FiDi anchorage and ramp: an item in `buildFidi`
-
-  Moving the bridge means updating all three, plus the matching x position on both tiles.
+- Water (`water.ts`): East River y −10..4, Hudson y 40.5..47 (both along x), the harbour x 112..132. `WATER` is the outline, `WATER_RECTS` scatters waves, `BOATS` are the routes.
+- **Brooklyn Bridge** (`bridge.ts`, `BR`): deck along y at world x 90.6–92.6; anchorages at y `BR.ya` (Brooklyn) and `BR.yb` (Manhattan), towers at `BR.t1`/`BR.t2`, shores at `BR.shoreB`/`BR.shoreM`. `bridgeSVG()` is the top-level river span; `anchorage(t, 'brooklyn' | 'manhattan')` draws each shore's anchorage, deck and ramp into DUMBO and FiDi. Moving the bridge means changing `BR` (and keeping both tiles' x ranges under it).
 
 ### `Tile` builder API
 
-Coordinates are local (0..T) and get offset by the tile's origin. **Ground layer**, drawn flat with no depth sorting:
+`new Tile(id, x0, y0, size | [W, D], opts)`. Coordinates are local (0..W along x, 0..D along y) and get offset by the tile's origin. **Ground layer**, drawn flat with no depth sorting:
 
-`road(x,y,w,d,axis,{line})`, `cobble`, `plaza`, `grass`, `circ`, `xwalk`, `rect`, `flat(points)`, `rail(...)`
+`road(x,y,w,d,axis,{line,name,nameAt})`, `streetName`, `cobble`, `plaza`, `grass`, `circ`, `xwalk`, `rect`, `flat(points)`, `rail(...)`
 
 **Objects**, which get an AABB and are depth-sorted:
 
-- `b(x,y,w,d,h,color,opts)`: a generic building. Options: `tower`, `fire:'L'|'R'`, `stoop:'L'`, `glass`, `g0`, `fh`, `colsL`/`colsR`, `noWinL`/`noWinR`, `door`, `extraFaces:(FL,FR)=>svg`, `chimney`, `roof`.
-- `pizza(id, x,y,w,d,h, color, {front:'L'|'R'|'LR', sign, signSize, awn:[c1,c2], signBg, signFg, base, u0,u1, faces, b:{...bld opts}})` draws a storefront building **and registers the pin position for `PLACES[id]`**. Every place id needs exactly one `pizza(...)` call (directly or through `row()`). `base` is the shopfront's own colour, separate from the building's brick.
-- `row(axis, at, from, to, items, maxDepth)` lays **real lots** side by side along a street (see "Real buildings"); `lot(l, x,y,w,d, opts)` places one at an explicit footprint.
-- Any `b(...)` with `style:` set is drawn by `styledBld()` instead of `bld()`.
-- `house`, `tree`, `lamp`, `bench`, `hydrant`, `person`, `crowd`, `queue`, `parked`, `cart`, `subway`, `flagpole`, and `add(x0,y0,x1,y1,svg,{above})` for custom shapes.
+- `face(lots, facing, at, from, to, {depth, pizzas, corners, over, fit})`: **the main way to build a street.** One side of a street from real lots in walking order (`side(street, from, to)` picks them by house number and parity). `facing` is the compass side the facades face (toward the street); `at` is the facade line. Lots get their real (compressed) frontage and the last one is cut at `to`, or `fit: true` scales them to fill exactly. `corners: {num: 'N'}` gives a corner lot a second street front; `pizzas: {placeId: {...storefront opts}}` turns the pizzeria's lot (`lot.place`) into its storefront; `over: {num: {...}}` overrides per lot (`ghost`, `style`, `faces`, `ground`…). `row()` is the same with hand-made items.
+- `pizza(id, x,y,w,d,h, color, {front, sign, signSize, awn, signBg, signFg, base, u0, u1, faces, b})` draws a storefront building **and registers the pin** (`t.pins[id]`: position, storefront compass side for auto-rotation, screen rect for x-ray). `front` is compass letters (`'E'`, `'SW'`; legacy `'L'`/`'R'` = W/S). Every place id needs exactly one registration.
+- `b(x,y,w,d,h,color,opts)`: a building; with `style:` set it's drawn by `styledBld()` (use that for anything new). `lot(l, x,y,w,d, opts)` places one real lot at an explicit footprint.
+- `house`, `tree`, `lamp`, `bench`, `hydrant`, `person`, `crowd`, `queue`, `parked`, `cart`, `subway`, `flagpole`, `fence`, and `add(x0,y0,x1,y1,svg,{above, small})` for custom shapes (`small` = never x-rayed).
 
-**Moving things:**
-
-- `car(axis, a, b, c, speed, color, {taxi,bus,len,z,onTop})` loops from `a` to `b` along `axis` at the fixed other coordinate `c`, and fades in and out at the ends.
-- `walker(axis, a, b, c, speed, {svg})` walks back and forth.
+**Moving things:** `car(axis, a, b, c, speed, color, {taxi,bus,len,z,onTop})` loops from `a` to `b` along `axis` at the other coordinate `c`; `walker(axis, a, b, c, speed, {svg})` walks back and forth. Positions are world coords; the map projects them through the current rotation every frame.
 
 ### Depth sorting
 
-- Every object has an AABB (`x0..x1`, `y0..y1`). `rel(a,b)` says A is behind B if `a.x1 <= b.x0` or `a.y1 <= b.y0` (separating axis). `topo()` sorts each tile's static items once, breaking ties by center sum `x+y`.
-- Moving objects are re-slotted every frame by `moverIndex()`, which calls `insertBefore` only when their slot changes.
-- Flags:
-  - `above: true` on raised things such as bridge decks makes them draw in front of anything under them.
-  - `onTop: true` on a mover such as the train makes it draw after whatever it rides on.
-  - `behindAll` marks the water.
-- Top level: water first, then tiles and the bridge in topological order, computed once. Boats are inserted dynamically.
-- **Never re-append or move tile `<g>` nodes after mounting.** Moving a node restarts its CSS intro "drop" animation.
-- Random choices (people colors, lit windows, tree positions) come from a seeded generator (`seed`). Adding or removing objects shifts the random choices for everything built after them. That's harmless, but expect small visual changes.
+- Every object has an AABB **in view space** (`Tile.add` converts with `rotAABB`, so it's only valid for the rotation it was built in). `rel(a,b)` says A is behind B if `a.x1 <= b.x0` or `a.y1 <= b.y0`. `topo()` sorts each tile's static items once, breaking ties by center sum.
+- Moving objects are re-slotted every frame by `moverIndex()`.
+- Flags: `above: true` (bridge decks, the Avenue J bridge) draws in front of anything under it; `onTop: true` on a mover draws it after whatever it rides on; `behindAll` marks the water.
+- **Never re-append or move tile `<g>` nodes after mounting** (it restarts the intro "drop" animation); a rotation replaces everything instead, with the intro switched off (`no-intro`).
+- Random choices come from a seeded generator, reseeded on every build, so each rotation is deterministic. Per-building colours use an address hash, not the RNG.
 
-### Layout pitfall (cost real time before)
+### Occlusion: x-ray, and the near-side rule
 
-In isometric view, a building on the **near side** of a street (larger x or y) covers the storefront across from it if it's tall. Three blocks had to be rearranged because of this:
+With real heights, the buildings across the street from a storefront hide it (Wall St is a canyon). When a review card is open, `map.ts` **x-rays** every static object drawn after the pizzeria whose box overlaps its storefront rectangle (class `xray`, faded to 14%). Opening a place also **auto-rotates** the view so its storefront faces you (`rotShowing`) and zooms to the area around it (`placeBounds`). So layouts can be true to life; you don't need to lower near-side buildings for the open card.
 
-- DUMBO: an open lot next to Grimaldi's.
-- FiDi: a deeper plaza and lower buildings south of it, so the stock exchange flag shows.
-- Hoboken: a park in front of Washington St, so Benny Tudino's shows.
-
-Keep near-side buildings low, or leave gaps, and **check every change with screenshots** (`pnpm shots`). The same applies across tiles: tall buildings near a tile's back edge cover the front strip of the tile behind it. That's why the tallest buildings sit in the back-right corners.
-
-A quick test before placing a near-side building with real height: a box whose nearest-to-the-street corner is `(x1, y0)` covers an L-face storefront on the line `y = yf` only at `x ≤ x1 − y0 + yf` (screen columns), and only up to height `h − (y0 − yf)` there. So in the Village, buildings south of Bleecker start at `y ≥ 11` (open corners in front: Christopher Park, Father Demo Square) to keep the 5–6 storey storefronts across the street visible.
+The old rule still matters for the plain neighbourhood view: a near-side box whose street-side corner is `(x1, y0)` covers a far storefront on the line `y = yf` only at `x ≤ x1 − y0 + yf`, up to height `h − (y0 − yf)`. Check every change with screenshots, from more than one rotation.
 
 ### Real buildings (data → styles)
 
-The West Village is built from real tax-lot data. The pipeline:
-
-1. `pnpm lots <hood>` (`tools/fetch-lots.mjs`): for each place, NYC GeoSearch → tax lot (BBL), then PLUTO for that lot and up to 3 neighbours each side on the **same street and block** (house-number order), then roof heights from Building Footprints. Writes `src/data/lots/<hood>.ts`. Public, keyless APIs; NYC only (Hoboken isn't in PLUTO).
-2. In the hood file, `lot(V.mamas, '323')` picks a lot by house number, and `t.row(...)` lays a run of them along a street in real order. The street grid stays hand-composed: a real 450 m stretch can't fit a 16-unit tile, so each pizzeria keeps its real building and its real next-door neighbours, and the composite joins the four block faces. Comments in `hoods/village.ts` say what's composite.
-3. `fromLot()` (`styles.ts`) turns a lot into drawing parameters:
-   - **width** = `frontage(ft)`: `0.08` units/ft up to 30 ft, wider buildings compressed (their bays just repeat), so narrow rowhouses next to big tenements keep their real rhythm. **Depth** the same, capped by the row.
-   - **storeys** from `numfloors`; **storey height** from the measured roof height (minus a ~14 ft ground floor), clamped to the style's range. Ground floor: 2.75 for pizzerias (room for the sign), 2.2 for other shops, 1.5 for stoops.
-   - **style** from PLUTO class + year (`styleOf`): L/E/F/G → `loft`; D/O/H/R with 8+ floors → `prewar`; ≤4 floors and pre-1880 → `rowhouse`; otherwise `tenement`. Shops on the ground floor for S*, K*, O* and *7 classes.
-   - **fire escape** on the street facade for tenements before 1920; **water tank** only above six storeys (the real NYC rule).
-   - **colours** are not in the data: picked per address from each style's palette by a hash, so they're stable and don't consume the scene RNG.
-4. `styledBld()` draws: brick body; **street facades** (`fronts`) with window bays, sills, lintels (flat / hooded / arched), sash bars, shutters (some rowhouses), belt course, generic shopfronts or a stoop/door, cornice slab with brackets or dentils; **exposed party walls** blank and slightly darker, optionally with a faded painted ad (`ghost: true`, generic trades only); **roof** bulkhead, skylight, party-wall chimneys, tank. Each facade's repeated parts are batched into a few `<path>`s, so detail barely raises the element count.
-
-Composite liberties in the Village: Christopher Park and Father Demo Square are placed at the corners in front; the 12-storey prewar in the back-right is a stand-in for buildings like 2 Cornelia St (12 fl, 1907), not a lot from the data.
+1. **Which streets**: `tools/areas.mjs` lists, per hood, the streets and house-number ranges the tile shows.
+2. **Fetch**: `pnpm lots <hood>` (`tools/fetch-lots.mjs`) writes every lot on those stretches (both sides, house-number order) to `src/data/lots/<hood>.ts`. NYC: GeoSearch marks each pizzeria's tax lot (`place`), PLUTO gives frontage, depth, floors, class, year, corner; Building Footprints gives roof height. Hoboken: OpenStreetMap footprints (frontage/depth measured along the street in Hoboken's grid); floors/year missing (`est`), filled in `hoods/hoboken.ts`. Public, keyless APIs.
+3. **Lay out**: hood files call `t.face(side(street, from, to), facing, …)`. The street grid is hand-composed from measured OpenStreetMap geometry (each hood's header comment lists the real order and the pizzerias' real positions); widths and order are real; long stretches between clusters are shortened or skipped.
+4. `fromLot()` maps a lot to drawing parameters:
+   - **width** = `frontage(ft)`: `0.08` units/ft up to 30 ft, wider buildings compressed. **Depth** the same, capped per face.
+   - **storeys**: `numfloors`, towers above 12 compressed (`drawnFloors`); **storey height** from the measured roof height, clamped. Ground floor: 2.75 for pizzerias (room for the sign), 2.2 for shops, 1.5 for stoops, 1.05 for porches.
+   - **style** (`styleOf`): L/E/F/G → `loft`; D/O/H/R with 8+ floors (or any 15+) → `prewar` before 1955, else `modern`; A/B up to 3 floors from 1890 → `frame`; ≤4 floors pre-1880 → `rowhouse`; otherwise `tenement`. `.5` floors on rowhouses/frame houses → attic with dormers. Shops for S*, K*, O*, *7 classes.
+   - **fire escape** on tenements before 1920; **water tank** above six storeys; **colours** by address hash.
+5. `styledBld()` draws every visible side by compass: **street facades** (`fronts`) with bays, sills, lintels, shopfronts or stoop/door/porch, cornice; the **rear** (opposite the street) with plain windows; **party walls** blank (optional `ghost` ad); roofs with bulkhead, skylight, chimney, tank, or gables and dormers; tall prewar buildings get a podium and set-back tower. Facade parts are batched into a few `<path>`s.
 
 ### Camera and UI
 
-- The camera is `{cx, cy, w}` in SVG user units and drives the `viewBox`. `fit(bounds)` frames bounds while subtracting the screen areas covered by the panel, header and neighborhood bar (`occlusion()`). `flyTo()` eases with a slight zoom-out bump in the middle.
-- `targetFor()` frames either the whole map or one tile. Tile zoom is capped at `w >= W*0.66` so the small Midwood tile doesn't over-zoom.
-- On phones (< 760px), the whole-map view frames only Manhattan and Brooklyn (`overviewBounds`), so Hoboken and Midwood peek in from the sides.
-- Pins and neighborhood labels live in screen-scaled layers (`#pins`, `#labels`) and keep a roughly constant on-screen size (`applyCam`). Pin name tags show only when zoomed in (the `near` class). `LABEL_AT` sets which corner each neighborhood label hangs from.
-- State: `mode` (`overview` or `hood`), `curHood`, `curPlace`, `listOpen`. Entry points: `showOverview()`, `focusHood(id)`, `openPlace(id)`, `openList()`, `startTour()`.
-- URL hash routing: `#<placeId>` or `#<hoodId>`. Keyboard: Esc closes or backs out, ←/→ switch places while a card is open, and Enter on a focused pin opens it.
-- `prefers-reduced-motion` stops the moving things and the intro animations.
+- The camera is `{cx, cy, w}` in SVG user units and drives the `viewBox`. `fit(bounds)` frames bounds minus the screen areas covered by the panel, header, neighborhood bar and (whole-map view) a left margin for labels (`occlusion()`). `flyTo()` eases with a slight zoom-out bump.
+- `targetFor()` frames the open place's surroundings (`placeBounds`), else one tile, else the whole map. On phones (< 760px) the whole map frames Manhattan and Brooklyn only.
+- **Rotation UI**: the compass (`components/Compass.tsx`) has rotate buttons and a north needle; clicking the needle resets to k = 0. Keys `Q`/`E`. `state.rot` in the store; `openPlace` auto-rotates; the tour picks each hood's best rotation (`bestRot`).
+- Pins and labels live in screen-scaled layers (`#pins`, `#labels`). Pin tags show only when zoomed in (`near`). `LABEL_AT` picks the screen corner each label hangs from.
+- State: `mode`, `curHood`, `curPlace`, `listOpen`, `listBy`, `touring`, `rot`. URL hash: `#<placeId>` or `#<hoodId>`. Keys: Esc, ←/→, Enter on a pin, Q/E.
+- `prefers-reduced-motion` stops movers, intro animations and the rotation fade.
 
 ### Visual style
 
@@ -225,4 +202,4 @@ pnpm shots --place joes              # opens a review card
 pnpm shots --url http://localhost:5173   # shoot the running dev server instead
 ```
 
-Screenshots go to `shots/`. Navigation in the script uses the URL hash. The script prints any console or page errors and a rough frame rate. The scene has about 5k SVG elements and runs at about 60fps in headless Chrome without a GPU. The hood view is too far out to judge facade detail: zoom with the mouse wheel in `pnpm dev`, or screenshot at `deviceScaleFactor: 2` after a few `mouse.wheel` steps. Look at the screenshots after **any** change to geometry or layout, because depth and overlap bugs only show up visually.
+Screenshots go to `shots/`. Navigation in the script uses the URL hash. The script prints any console or page errors and a rough frame rate. The scene has about 12k SVG elements and runs at about 60fps in headless Chrome without a GPU. The hood view is too far out to judge facade detail: zoom with the mouse wheel in `pnpm dev`, or screenshot at `deviceScaleFactor: 2` after a few `mouse.wheel` steps. Look at the screenshots after **any** change to geometry or layout, because depth and overlap bugs only show up visually, and check more than one rotation (press `q` in the page, or set `location.hash` to a place to trigger auto-rotation).

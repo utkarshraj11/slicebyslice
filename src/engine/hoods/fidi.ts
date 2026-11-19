@@ -1,67 +1,114 @@
 import { Tile } from '../tile';
-import { C_STONE, C_WIN, iso, f1, pts, poly, ln, dk, box, faceL, faceR, frect, cyl } from '../iso';
-import { windowsSVG } from '../parts';
-import { cableZ } from '../bridge';
+import { box, face, frect, ln, iso, f1, poly, INK, type Dir, type Face } from '../iso';
+import { side, lot } from '../../data/lots';
+import { anchorage } from '../bridge';
+import F from '../../data/lots/fidi';
+
+/* Financial District along Wall Street, schematic but true to the street map (OpenStreetMap, Nov 2026).
+   Frame: Manhattan grid (x south, y west); Wall St runs east–west from Broad/Nassau St to the East River.
+   Cross streets in real order west→east: Broad/Nassau · William · Pearl (Hanover) · Water · South St.
+     Upside Pizza  65 Wall St (in 63 Wall, a 1929 tower), SOUTH side between William and Pearl, faces north
+                   across Wall St to 60 Wall's tower; Hanover Square's garden is behind the block.
+   NYSE faces Broad St just south of Wall; Federal Hall faces Wall St at Nassau. The Brooklyn Bridge's
+   Manhattan anchorage (really ~600 m north, by City Hall) sits at the tile's north-east corner. */
+const WS = F['WALL STREET'];
 
 export function buildFidi(): Tile {
-  const t=new Tile('fidi',40,22,16,{hood:'fidi',top:9});
-  t.road(7.0,0,1.2,16,'y',{line:false});
-  t.road(0,3.6,7.0,1.2,'x',{line:false});
-  t.plaza(9.0,9.4,7.0,3.3);
-  t.xwalk(7.0,9.6,1.2,.45); t.xwalk(6.35,3.6,.5,1.2);
-  // bridge anchorage + ramp (bridge at world x 41.5–43.5)
-  {const X=t.X(1.5),Y=t.Y(0);
-   let s=box(X-.2,Y,0,2.4,1.6,2.3,C_STONE);
-   const F=faceL(X-.2,Y,0,2.4,1.6);s+=frect(F,.5,.25,1.9,1.5,dk(C_STONE,.1));
-   s+=poly([iso(X,Y,2.31),iso(X+2,Y,2.31),iso(X+2,Y+1.6,2.31),iso(X,Y+1.6,2.31)],'#8d8478');
-   // ramp
-   s+=poly([iso(X+2,Y+1.6,0),iso(X+2,Y+1.6,2.3),iso(X+2,Y+3.6,0)],dk(C_STONE,.12));
-   s+=poly([iso(X,Y+1.6,2.3),iso(X+2,Y+1.6,2.3),iso(X+2,Y+3.6,0),iso(X,Y+3.6,0)],'#8d8478');
-   s+=ln(iso(X+1,Y+1.6,2.32),iso(X+1,Y+3.6,.02),'#f6efe2',1.2,'stroke-dasharray="5 5"');
-   for(const cx of [X+.2,X+1.8]){const pts2=[];for(let yy=22;yy<=23.4;yy+=.2)pts2.push(iso(cx,yy,cableZ(yy)));s+=`<polyline points="${pts(pts2)}" fill="none" stroke-width="1.6"/>`;}
-   t.add(1.3,0,3.7,3.6,s);}
-  t.grass(.1,.2,1.0,3.2); t.grass(4.0,.2,2.6,3.2);
-  t.tree(.6,1.0,.8); t.tree(.6,2.7,.8); t.tree(4.6,.9); t.tree(5.9,2.4,.9); t.bench(5.2,1.7,'y'); t.crowd(4.3,1.4,2,1.6,3);
-  // Upside + towers + Federal Hall
-  t.b(.4,5.2,3.0,3.2,10.5,'#a9c3d6',{glass:true,roof:'#d9e4ea'});
-  t.pizza('upside',3.6,5.3,2.6,2.7,3.8,'#f0d9cf',{front:'R',sign:'UPSIDE PIZZA',awn:['#e06c9f','#2f3a48'],signBg:'#2f3a48',signFg:'#f7a8c8'});
-  t.queue(6.55,5.5,'y',3,.5);
-  t.b(.4,8.8,2.2,3.6,3.4,'#cfc6b6');
-  {const X=t.X(2.8),Y=t.Y(9.0),w=3.4,d=3.3,h=3.9;
-   let s=box(X,Y,0,w,d,h,'#f1ede4',{top:'#e6e0d4'});
-   const F=faceR(X,Y,0,w,d);
-   s+=frect(F,.2,.5,d-.2,h-1.0,'#d5cebf');
-   for(let i=0;i<6;i++){const u=.35+i*(d-.7)/5;s+=frect(F,u-.13,.5,u+.13,h-1.0,'#fbf9f4');}
-   s+=frect(F,.1,h-1.0,d-.1,h-.7,'#ece6da');
-   s+=poly([F.at(.1,h-.7),F.at(d-.1,h-.7),F.at(d/2,h-.05)],'#f4f0e8');
-   for(let k=0;k<3;k++) s+=box(X+w+.0,Y+.4,.17*k,.75-.25*k,d-.8,.17,'#e3ddd0',{top:'#efe9de'});
-   const p=iso(X+w+.45,Y+d/2,.5);s+=`<g transform="translate(${f1(p[0])},${f1(p[1])})"><rect x="-4" y="-4" width="8" height="5" fill="#e3ddd0"/><path d="M-2.4 -4l.4 -8h4l.4 8z" fill="#7d8a8a"/><circle cx="0" cy="-14" r="2.2" fill="#7d8a8a"/></g>`;
-   t.add(2.8,9.0,6.95,12.3,s);}
-  t.b(.4,12.9,2.6,2.8,3.2,'#d9cdb8'); t.b(3.2,12.9,2.8,2.8,3.4,'#c9a98a');
-  // NYSE
-  {const X=t.X(9.4),Y=t.Y(4.4),w=3.8,d=4.6,h=4.8;
-   let s=box(X,Y,0,w,d,h,'#efebe2',{top:'#e7e1d4'});
-   const F=faceL(X,Y,0,w,d),FR=faceR(X,Y,0,w,d);
-   s+=frect(F,0,0,w,.55,'#e2dccf');
-   s+=frect(F,.25,.55,w-.25,h-1.05,'#cfc8ba');
-   for(let i=0;i<6;i++){const u=.4+i*(w-.8)/5;s+=frect(F,u-.14,.55,u+.14,h-1.05,'#fbf9f4');}
-   s+=frect(F,.1,h-1.05,w-.1,h-.75,'#ece6da');
-   s+=poly([F.at(.1,h-.75),F.at(w-.1,h-.75),F.at(w/2,h-.08)],'#f4f0e8');
-   const fu0=.55,fu1=w-.55,fv0=1.15,fv1=3.35,n=7;
-   for(let i=0;i<n;i++){const v0=fv0+(fv1-fv0)*i/n,v1=fv0+(fv1-fv0)*(i+1)/n;s+=frect(F,fu0,v0,fu1,v1,i%2?'#f7f3ea':'#c8423a','stroke="none"');}
-   s+=frect(F,fu0,fv0+(fv1-fv0)*.45,fu0+(fu1-fu0)*.42,fv1,'#2f4f86','stroke="none"');
-   for(let i=0;i<4;i++)for(let j=0;j<3;j++){const p=F.at(fu0+.15+i*.28,fv1-.18-j*.32);s+=`<circle cx="${f1(p[0])}" cy="${f1(p[1])}" r=".9" fill="#fff" stroke="none"/>`;}
-   s+=frect(F,fu0,fv0,fu1,fv1,'none','stroke-width="1"');
-   s+=windowsSVG(FR,4,3,.6,h-.6,.34,.6,C_WIN);
-   t.add(9.4,4.4,13.2,9.0,s);}
-  t.b(9.4,.4,3.4,3.4,9.6,'#b7c9d6',{glass:true,roof:'#dfe7ec'}); t.b(13.2,.4,2.6,3.8,8.0,'#cbc3b4',{tower:true});
-  t.b(13.6,4.6,2.2,4.4,6.0,'#dacfbd',{fire:'L'});
-  t.b(9.4,13.1,3.0,2.7,3.3,'#d3c3a8',{door:'L'}); t.b(12.8,13.1,3.0,2.7,3.0,'#bfae96',{door:'L'}); t.tree(10.2,12.4,.8); t.tree(14.6,12.4,.8); t.bench(12.4,12.3,'x');
-  t.crowd(9.4,9.6,6.2,2.4,13); t.cart(14.9,10.9,['#f2c230','#d9473a']);
-  for(let i=0;i<6;i++){const p=[9.2+i*.25,12.55];t.add(p[0]-.05,p[1]-.05,p[0]+.05,p[1]+.05,cyl(t.X(p[0]),t.Y(p[1]),0,.07,.3,'#8a8178'));}
-  t.lamp(6.4,8.6); t.lamp(8.5,13.0); t.hydrant(8.45,5.0);
-  t.car('y',16,0,7.6,1.2,'#f4c430',{taxi:true}); t.car('y',16,0,7.6,1.2,'#2f3a48');
-  t.car('x',0,7,4.2,1.0,'#e8e4dc');
-  t.walker('x',9.2,15.8,10.1,.45); t.walker('x',9.4,15.6,10.8,.5); t.walker('y',.3,15.6,6.55,.4); t.walker('y',.3,15.6,8.55,.45);
+  const W = 24, D = 35;
+  const t = new Tile('fidi', 88, 4, [W, D], { hood: 'fidi', top: 14 });
+
+  /* ---------- streets ---------- */
+  t.plaza(0, 0, W, 1.2, '#e7ddc9');
+  t.add(0, -0.05, W, 0.15, t.rail(0.0, 0.12, W, 0.12), { small: true });
+  t.road(0, 1.2, W, 1.2, 'x', { line: false, name: 'South St', nameAt: 0.7 });
+  t.road(12.0, 2.4, 1.2, D - 2.4, 'y', { line: false, name: 'Wall St', nameAt: 0.55, fill: '#d9d2c6' });
+  for (const [y, name, w] of [[5.6, 'Water St', 1.2], [12.6, 'Pearl St', 1.0], [20.8, 'William St', 1.0], [30.0, 'Broad St', 1.4]] as const)
+    t.road(0, y, W, w, 'x', { line: false, name: name === 'Broad St' ? 'Broad St · Nassau St' : name, nameAt: 0.82 });
+  t.road(18.4, 2.4, 1.0, 27.6, 'y', { line: false, name: 'Beaver St', nameAt: 0.5 });
+  t.road(4.0, 10.2, 1.0, 19.8, 'y', { line: false, name: 'Pine St', nameAt: 0.5 });
+  t.xwalk(11.4, 20.8, 0.5, 1.0); t.xwalk(13.3, 20.8, 0.5, 1.0); t.xwalk(11.4, 12.6, 0.5, 1.0); t.xwalk(13.3, 12.6, 0.5, 1.0); t.xwalk(12.0, 29.4, 1.2, 0.5);
+
+  /* ---------- Wall Street, north side (facing south) ---------- */
+  federalHall(t, 5.6, 26.2, 5.8, 3.4);
+  t.face([lot(WS, 30), lot(WS, 40)], 'S', 11.4, 26.0, 21.8, { depth: 5.8, fit: true });
+  t.face([lot(WS, 60)], 'S', 11.4, 20.2, 13.6, { depth: 5.8, fit: true });
+  t.face([lot(WS, 72), lot(WS, 82)], 'S', 11.4, 12.0, 6.8, { depth: 5.8, fit: true });
+  t.face([lot(WS, 100)], 'S', 11.4, 5.0, 2.6, { depth: 4.0, fit: true });
+  t.face([lot(WS, 14)], 'S', 11.4, 34.8, 32.0, { depth: 5.8, fit: true, corners: { 14: 'E' } });
+
+  /* ---------- Wall Street, south side (facing north) ---------- */
+  // 55 Wall (1842): the old Merchants' Exchange, two tiers of columns along Wall St
+  t.face([lot(WS, 37), lot(WS, 45), lot(WS, 55)], 'N', 13.8, 29.4, 21.8, { depth: 4.0, fit: true,
+    over: { 55: { style: 'prewar', faces: (_L, _R, Fd) => portico(Fd('N'), 0.15, Fd('N').L - 0.15, 0.6, 2.7, 7, false) + portico(Fd('N'), 0.15, Fd('N').L - 0.15, 3.1, 5.0, 7, false) } } });
+  t.face([lot(WS, 63), lot(WS, 67)], 'N', 13.8, 20.2, 13.6, { depth: 4.0, fit: true, corners: { 67: 'E' },
+    pizzas: { upside: { u0: 0.15, u1: 2.7, sign: 'UPSIDE PIZZA', awn: ['#e06c9f', '#2f3a48'], signBg: '#2f3a48', signFg: '#f7a8c8', base: '#2f3a48' } } });
+  t.face([lot(WS, 75)], 'N', 13.8, 12.0, 6.8, { depth: 4.0, fit: true });
+  t.face([lot(WS, 95), lot(WS, 99)], 'N', 13.8, 5.0, 2.6, { depth: 4.0, fit: true });
+  nyse(t, 13.8, 31.4, 5.2, 3.4);
+
+  /* ---------- south of Beaver St: Hanover Square, Delmonico's ---------- */
+  t.plaza(20.0, 13.6, 3.8, 6.6, '#e5dccb');
+  t.grass(20.4, 14.0, 3.0, 2.6); t.grass(20.4, 17.4, 3.0, 2.4);
+  t.tree(21.2, 15.0, 0.9); t.tree(22.6, 16.2, 0.85); t.tree(21.4, 18.6, 0.9); t.bench(22.8, 18.8, 'y');
+  t.b(20.0, 21.8, 3.6, 2.6, 1.3 + 7 * 0.92 + 0.12, '#c48a5a', { style: 'prewar', floors: 8, g0: 1.3, fh: 0.92, fronts: 'NW', ground: 'shop', key: "DELMONICO'S" });
+  t.face(side(F['BEAVER STREET'], 2, 30), 'N', 20.0, 24.6, 29.6, { depth: 3.0, fit: true });
+  t.face(side(F['BEAVER STREET'], 1, 31), 'S', 17.8, 24.6, 29.6, { depth: 3.0, fit: true });
+  t.b(20.0, 2.6, 3.8, 10.4, 1.3 + 15 * 0.8 + 0.12, '#a9c3d6', { style: 'modern', floors: 16, g0: 1.3, fh: 0.8, key: 'WATER ST TOWER' });
+
+  /* ---------- north of Pine St, the bridge ---------- */
+  anchorage(t, 'manhattan');
+  t.b(0.4, 12.0, 3.4, 8.0, 1.3 + 17 * 0.85 + 0.12, '#cfc6b6', { style: 'prewar', floors: 18, g0: 1.3, fh: 0.85, fronts: 'SW', ground: 'door', key: 'PINE ST 1' });
+  t.b(0.4, 21.0, 3.4, 6.4, 1.3 + 11 * 0.85 + 0.12, '#b7c9d6', { style: 'modern', floors: 12, g0: 1.3, fh: 0.85, key: 'PINE ST 2' });
+  t.b(0.4, 28.2, 3.4, 6.4, 1.3 + 20 * 0.85 + 0.12, '#d7c19b', { style: 'prewar', floors: 30, g0: 1.3, fh: 0.85, fronts: 'SW', ground: 'door', key: 'PINE ST 3' });
+
+  /* ---------- life ---------- */
+  t.queue(13.0, 16.2, 'y', 4, 0.45);   // Upside, on the Wall St sidewalk
+  t.crowd(12.2, 22.8, 0.9, 5.6, 9);    // Wall St is a pedestrian street outside the Exchange
+  t.crowd(11.0, 30.2, 1.0, 1.0, 3);
+  t.cart(13.0, 23.4, ['#f2c230', '#d9473a']);
+  t.lamp(11.6, 21.6); t.lamp(13.6, 12.4); t.hydrant(13.6, 5.4);
+  t.car('x', W, 0, 1.6, 1.2, '#f4c430', { taxi: true }); t.car('x', 0, W, 2.0, 1.1, '#2f3a48');
+  t.car('x', W, 0, 13.1, 1.0, '#e8e4dc'); t.car('x', 0, W, 30.5, 1.1, '#f4c430', { taxi: true });
+  t.walker('y', 2.6, D - 0.4, 11.6, 0.4); t.walker('y', 2.6, D - 0.4, 13.6, 0.45); t.walker('x', 0.3, W - 0.3, 0.5, 0.5);
   return t;
+}
+
+/** Columns + entablature (+ pediment) across part of a face. */
+function portico(Fc: Face, u0: number, u1: number, v0: number, v1: number, n: number, pediment: boolean, stone = '#f4f0e8') {
+  if (Fc.hidden) return '';
+  let s = frect(Fc, u0, v0, u1, v1, '#cfc8ba');
+  for (let i = 0; i < n; i++) { const u = u0 + 0.25 + ((u1 - u0 - 0.5) * i) / (n - 1); s += frect(Fc, u - 0.13, v0, u + 0.13, v1, stone); }
+  s += frect(Fc, u0 - 0.05, v1, u1 + 0.05, v1 + 0.32, '#ece6da');
+  if (pediment) s += poly([Fc.at(u0 - 0.05, v1 + 0.32), Fc.at(u1 + 0.05, v1 + 0.32), Fc.at((u0 + u1) / 2, v1 + 1.0)], '#f4f0e8');
+  return s;
+}
+
+/** Federal Hall (1842): Greek temple front on Wall St at Nassau, steps and a statue on a plinth. */
+function federalHall(t: Tile, x: number, y: number, w: number, d: number) {
+  const X = t.X(x), Y = t.Y(y), h = 3.9;
+  let s = box(X, Y, 0, w, d, h, '#f1ede4', { top: '#e6e0d4' });
+  s += portico(face(X, Y, 0, w, d, 'S'), 0.2, d - 0.2, 0.5, h - 1.0, 6, true);
+  for (const dir of ['W', 'E'] as Dir[]) { const Fc = face(X, Y, 0, w, d, dir); for (let u = 0.6; u < Fc.L - 0.3; u += 0.9) s += frect(Fc, u - 0.15, 1.0, u + 0.15, 2.6, '#cfe2ee', 'stroke-width=".5"'); }
+  for (let k = 0; k < 3; k++) s += box(X + w + 0.0, Y + 0.4, 0.17 * k, 0.75 - 0.25 * k, d - 0.8, 0.17, '#e3ddd0', { top: '#efe9de' });
+  const p = iso(X + w + 0.45, Y + d / 2, 0.5);
+  s += `<g transform="translate(${f1(p[0])},${f1(p[1])})"><rect x="-4" y="-4" width="8" height="5" fill="#e3ddd0"/><path d="M-2.4 -4l.4 -8h4l.4 8z" fill="#7d8a8a"/><circle cx="0" cy="-14" r="2.2" fill="#7d8a8a"/></g>`;
+  t.add(x, y, x + w + 0.8, y + d, s);
+}
+
+/** New York Stock Exchange (1903): columned temple front on Broad St, flag across the columns. */
+function nyse(t: Tile, x: number, y: number, w: number, d: number) {
+  const X = t.X(x), Y = t.Y(y), h = 5.2;
+  let s = box(X, Y, 0, w, d, h, '#efebe2', { top: '#e7e1d4' });
+  const Fc = face(X, Y, 0, w, d, 'E');
+  if (!Fc.hidden) {
+    s += frect(Fc, 0, 0, Fc.L, 0.55, '#e2dccf') + portico(Fc, 0.25, Fc.L - 0.25, 0.55, h - 1.1, 6, true);
+    const fu0 = 0.6, fu1 = Fc.L - 0.6, fv0 = 1.2, fv1 = 3.4, n = 7;
+    for (let i = 0; i < n; i++) { const v0 = fv0 + ((fv1 - fv0) * i) / n, v1 = fv0 + ((fv1 - fv0) * (i + 1)) / n; s += frect(Fc, fu0, v0, fu1, v1, i % 2 ? '#f7f3ea' : '#c8423a', 'stroke="none"'); }
+    s += frect(Fc, fu0, fv0 + (fv1 - fv0) * 0.45, fu0 + (fu1 - fu0) * 0.42, fv1, '#2f4f86', 'stroke="none"');
+    for (let i = 0; i < 4; i++) for (let j = 0; j < 3; j++) { const p = Fc.at(fu0 + 0.15 + i * 0.28, fv1 - 0.18 - j * 0.32); s += `<circle cx="${f1(p[0])}" cy="${f1(p[1])}" r=".9" fill="#fff" stroke="none"/>`; }
+    s += frect(Fc, fu0, fv0, fu1, fv1, 'none', 'stroke-width="1"');
+  }
+  for (const dir of ['N', 'S', 'W'] as Dir[]) { const Fs = face(X, Y, 0, w, d, dir); for (let u = 0.5; u < Fs.L - 0.3; u += 0.8) s += frect(Fs, u - 0.15, 1.0, u + 0.15, h - 1.2, '#cfe2ee', 'stroke-width=".5"'); }
+  s += ln(iso(X + 0.6, Y + d / 2, h), iso(X + 0.6, Y + d / 2, h + 1.6), INK, 1);
+  t.add(x, y, x + w, y + d, s);
 }

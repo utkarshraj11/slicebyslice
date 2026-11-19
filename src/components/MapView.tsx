@@ -14,7 +14,7 @@ export function MapView() {
       onHood: focusHood,
       onBackground: tapBackground,
       onUserMove: stopTour,
-    });
+    }, getState().rot);
     const s = getState();
     m.setOverview(s.mode === 'overview');
     m.setActivePin(s.curPlace);
