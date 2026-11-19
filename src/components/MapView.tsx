@@ -1,11 +1,15 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { createMap, type MapHandle } from '../engine/map';
 import { attachMap, mapView, openPlace, focusHood, tapBackground, stopTour, rotate, getState } from '../store';
+
+const TOD = ['☀ Day', '◐ Golden hour', '☾ Dusk'];
 
 /** The isometric map. React renders the empty <svg> shell once; the engine owns everything inside. */
 export function MapView() {
   const svg = useRef<SVGSVGElement>(null);
   const scene = useRef<SVGGElement>(null), fog = useRef<SVGGElement>(null), sky = useRef<SVGGElement>(null), labels = useRef<SVGGElement>(null), pins = useRef<SVGGElement>(null);
+  /** time of day: a multiply-blended wash over the map (cheap: composited, no per-element filter) */
+  const [tod, setTod] = useState(0);
   const map = useRef<MapHandle | null>(null), bar = useRef<HTMLDivElement>(null), barLabel = useRef<HTMLSpanElement>(null), pct = useRef<HTMLSpanElement>(null);
 
   useEffect(() => {
@@ -45,13 +49,15 @@ export function MapView() {
         </pattern>
       </defs>
       <g id="world" stroke="#2e2b29" strokeWidth=".9" strokeLinejoin="round" strokeLinecap="round">
-        <g id="scene" ref={scene} />
+        <g id="scene" ref={scene} stroke="#4f433d" strokeWidth=".6" />
         <g id="fog" ref={fog} />
         <g id="sky" ref={sky} />
         <g id="labels" ref={labels} />
         <g id="pins" ref={pins} />
       </g>
     </svg>
+    <div className={'tint tod' + tod} aria-hidden="true" />
+    <button className="todbtn" onClick={() => setTod((tod + 1) % TOD.length)} title="Change the light">{TOD[tod]}</button>
     <div className="scalebar" aria-hidden="true"><span ref={barLabel} /><div ref={bar} /></div>
     <div className="zoomctl" role="group" aria-label="Zoom">
       <button aria-label="Zoom in" title="Zoom in" onClick={() => map.current?.zoomBy(1 / 1.5)}>+</button>

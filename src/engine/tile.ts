@@ -81,6 +81,8 @@ export class Tile {
   boxes: [number, number, number, number, boolean][] = [];
   parkedAt: [number, number, number, number][] = [];
   shops: [number, number, number, number][] = [];
+  /** building footprints + heights (local), for cast shadows */
+  casts: [number, number, number, number, number][] = [];
   hood: HoodId | null; top: number; thick: number; slab: string;
   /** extents along world x and y */
   W: number; D: number;
@@ -154,8 +156,8 @@ export class Tile {
   }
 
   /* objects (depth-sorted) */
-  b(x: number, y: number, w: number, d: number, h: number, c: string, o: BldOpts = {}) { return this.add(x, y, x + w, y + d, build(this.X(x), this.Y(y), w, d, h, c, o)); }
-  house(x: number, y: number, w: number, d: number, h: number, c: string, rc: string) { this.add(x, y, x + w, y + d, houseSVG(this.X(x), this.Y(y), w, d, h, c, rc)); }
+  b(x: number, y: number, w: number, d: number, h: number, c: string, o: BldOpts = {}) { this.casts.push([x, y, w, d, h + (o.z0 ?? 0)]); return this.add(x, y, x + w, y + d, build(this.X(x), this.Y(y), w, d, h, c, o)); }
+  house(x: number, y: number, w: number, d: number, h: number, c: string, rc: string) { this.casts.push([x, y, w, d, h + 1]); this.add(x, y, x + w, y + d, houseSVG(this.X(x), this.Y(y), w, d, h, c, rc)); }
   tree(x: number, y: number, s = 1) { this.add(x - 0.15, y - 0.15, x + 0.15, y + 0.15, treeSVG(this.X(x), this.Y(y), s)); }
   lamp(x: number, y: number) { this.add(x - 0.05, y - 0.05, x + 0.05, y + 0.05, lampSVG(this.X(x), this.Y(y)), { small: true }); }
   bench(x: number, y: number, a: Axis = 'x') { this.add(x - 0.35, y - 0.35, x + 0.35, y + 0.35, benchSVG(this.X(x), this.Y(y), a), { small: true }); }
@@ -210,6 +212,7 @@ export class Tile {
       ...o.b,
     });
     const item = this.add(x, y, x + w, y + d, s);
+    this.casts.push([x, y, w, d, h]);
     this.shops.push([x, y, x + w, y + d]);
     // storefront rectangle on screen, for fading whatever stands in front of it
     const Fm = F(fronts[0]);
@@ -248,7 +251,7 @@ export class Tile {
       for (const [edge, out] of [[lo, -1], [hi, 1]] as const) {
         const e2 = Math.max(0, Math.min(along ? D : W, edge + out * SW));
         for (const [a, b] of open(r, edge + out * 0.01)) {
-          walks.push(poly([P(along, a, edge, 0.01), P(along, b, edge, 0.01), P(along, b, e2, 0.01), P(along, a, e2, 0.01)], '#e6e0d4', 'stroke="none"'));
+          walks.push(poly([P(along, a, edge, 0.01), P(along, b, edge, 0.01), P(along, b, e2, 0.01), P(along, a, e2, 0.01)], '#eee8dc', 'stroke="none"'));
           kerbs.push(ln(P(along, a, edge), P(along, b, edge), 'rgba(80,66,50,.4)', 0.8) +
             ln(P(along, a, edge + out * 0.05), P(along, b, edge + out * 0.05), '#fbf8f1', 1.4));
         }
@@ -256,6 +259,7 @@ export class Tile {
     }
     this.gnd.unshift(...walks); // under everything else on the ground
     this.gnd.push(...kerbs);
+    this.gnd.push(this.shadows());
     this.checkTraffic();
     // street trees: every ~3.2 units (40 ft) along each sidewalk, not near crossings or storefronts
     const nearShop = (x: number, y: number) => this.shops.some(b => x > b[0] - 1.6 && x < b[2] + 1.6 && y > b[1] - 1.6 && y < b[3] + 1.6);
@@ -265,7 +269,7 @@ export class Tile {
         for (let t = a + 1.4; t < b - 1.2; t += 3.2) {
           const [x, y] = along ? [t, c] : [c, t];
           if (rnd() < 0.3 || nearShop(x, y) || !free(x - 0.18, y - 0.18, x + 0.18, y + 0.18)) continue;
-          this.tree(x, y, 0.62);
+          this.tree(x, y, 0.8);
         }
       }
     }
@@ -277,6 +281,20 @@ export class Tile {
       for (const [x, y, f] of [[x0 - 0.25, y0 - 0.25, 'S'], [x1 + 0.25, y1 + 0.25, 'N']] as const)
         if (free(x - 0.06, y - 0.06, x + 0.06, y + 0.06, 0.05)) this.signal(x, y, f);
     }
+  }
+  /** Cast shadows of every building, one path on the ground. The sun is fixed in the world (from the east-
+      south-east, so in the default view shadows fall toward the viewer, in front of the west faces). */
+  shadows() {
+    const SX = -0.12, SY = 0.5, cap = 7; // shadow offset per unit of height; towers capped so they don't blanket a tile
+    const cl = (v: number, m: number) => Math.max(0, Math.min(m, v));
+    let d = '';
+    for (const [x, y, w, dd, h] of this.casts) {
+      const k = Math.min(h, cap), a = SX * k, b = SY * k, x1 = x + w, y1 = y + dd;
+      // hull of the footprint and its offset copy; this vertex order assumes a < 0 < b
+      const hull = [[x, y], [x1, y], [x1, y1], [x1 + a, y1 + b], [x + a, y1 + b], [x + a, y + b]];
+      d += 'M' + hull.map(([px, py]) => { const p = this.P(cl(px, this.W), cl(py, this.D), 0.025); return f1(p[0]) + ' ' + f1(p[1]); }).join('L') + 'Z';
+    }
+    return d ? `<path d="${d}" fill="#3b3150" opacity=".22" stroke="none"/>` : '';
   }
   /** Warn (dev console, and so `pnpm shots`) about any car, bus, walker or parked car whose path runs through a building. */
   checkTraffic() {
