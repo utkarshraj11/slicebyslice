@@ -194,7 +194,8 @@ export function createMap(host: HTMLDivElement, overlay: HTMLDivElement, cb: Map
   let activeId: string | null = null, cutDirty = false;
   const hidden: THREE.Object3D[] = [], boxes = new Map<THREE.Object3D, THREE.Box3>();
   const solids: THREE.Mesh[] = [];
-  W.root.traverse(o => { const m = o as THREE.Mesh; if (m.isMesh && m.castShadow && m.parent === W.root) solids.push(m); });
+  // (instanced trees are one mesh: hiding it would cut away every tree at once)
+  W.root.traverse(o => { const m = o as THREE.Mesh; if (m.isMesh && m.castShadow && m.parent === W.root && !(o as THREE.InstancedMesh).isInstancedMesh) solids.push(m); });
   function rectOf(b: THREE.Box3) {
     let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
     for (const x of [b.min.x, b.max.x]) for (const y of [b.min.y, b.max.y]) for (const z of [b.min.z, b.max.z]) {
