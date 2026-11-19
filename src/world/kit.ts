@@ -29,6 +29,7 @@ export const BRICK = ['#a9563f', '#9d4b38', '#b4644a', '#8f4635', '#c27a5c', '#9
 export const BROWN = ['#8a5a47', '#9b6a52', '#7d4f3e', '#a8765c', '#c9a27e', '#d2b48c'];
 export const STONE = ['#d7c19b', '#cdb48c', '#e0cfae', '#cfc6b6', '#c9a98a'];
 export const GLASS = ['#a9c3d6', '#9fb4c4', '#b7c9d6', '#8fa8b8'];
+const GREENS = ['#8cc66a', '#9fd178', '#7cb85f', '#a8d27e', '#93c96d', '#86bf68'];
 export const ROOFS = ['#c9c3b8', '#b9b3aa', '#d3cec4', '#a9a49c'];
 const AWN: [string, string][] = [['#d9473a', '#fff6e6'], ['#2f6b4f', '#f4efe3'], ['#2f3a48', '#f2c230'], ['#7a2e2a', '#efe1c8']];
 
@@ -83,6 +84,8 @@ export class World {
   /** all land (for picking) */
   ground: THREE.Object3D[] = [];
   private filler: THREE.BufferGeometry[] = [];
+  private crowns: [number, number, number, number, THREE.Color][] = [];
+  private trunks: [number, number, number, number][] = [];
   hood: HoodId | null = null;
 
   add<T extends THREE.Object3D>(o: T, shadow = true): T {
@@ -111,7 +114,7 @@ export class World {
 
   /* ---------- ground ---------- */
   land(x0: number, z0: number, w: number, d: number) {
-    const m = this.box(x0, -2, z0, w, 2, d, [lam('#b98f5f'), lam('#b98f5f'), lam('#a3cf78'), lam('#8a6a45'), lam('#c9a272'), lam('#c9a272')], false);
+    const m = this.box(x0, -5, z0, w, 5, d, [lam('#b98f5f'), lam('#b98f5f'), lam('#a3cf78'), lam('#8a6a45'), lam('#c9a272'), lam('#c9a272')], false);
     this.ground.push(m); return m;
   }
   slab(x0: number, z0: number, w: number, d: number, c: string, top = 0.06) { return this.box(x0, 0, z0, w, top, d, c, false); }
@@ -125,7 +128,13 @@ export class World {
   }
 
   /* ---------- buildings ---------- */
-  building(x0: number, z0: number, w: number, d: number, floors: number, wall: string, o: BldOpts = {}) {
+  building(x0: number, z0: number, w: number, d: number, floors: number, wall: string, o: BldOpts = {}): number {
+    // tall masonry buildings often step back near the top
+    if (!o.glass && floors >= 10 && o.y0 === undefined && w > 2.4 && d > 2.4 && rnd() < 0.6) {
+      const cf = floors >= 14 ? 3 : 2, inset = Math.min(w, d) * 0.18;
+      const t1 = this.building(x0, z0, w, d, floors - cf, wall, { ...o, tank: false, y0: 0 });
+      return this.building(x0 + inset, z0 + inset, w - 2 * inset, d - 2 * inset, cf, wall, { ...o, fronts: [], shop: false, y0: t1 });
+    }
     const y0 = o.y0 ?? 0, fr = o.fronts ?? [];
     const side = (f: Dir) => {
       const [map, emissiveMap] = facadeTex(f === 'E' || f === 'W' ? d : w, floors, wall, { shop: o.shop && fr.includes(f), glass: o.glass });
@@ -141,6 +150,12 @@ export class World {
       const tx = x0 + w * 0.7, tz = z0 + d * 0.3;
       for (const [dx, dz] of [[-0.4, -0.4], [0.4, -0.4], [-0.4, 0.4], [0.4, 0.4]]) this.box(tx + dx - 0.05, top, tz + dz - 0.05, 0.1, 0.6, 0.1, '#4a4542');
       this.cyl(tx, top + 0.6, tz, 0.7, 0.7, 1.3, '#a8743f', 8); this.add(at(new THREE.Mesh(new THREE.ConeGeometry(0.78, 0.6, 8), lam('#7d5432')), tx, top + 2.2, tz));
+    } else if (!o.glass && o.cornice !== null && floors >= 4 && floors <= 9 && w > 2.6 && d > 2.6 && rnd() < 0.18) {
+      // a roof garden: planted deck and a couple of small trees
+      this.box(x0 + 0.35, top, z0 + 0.35, w - 0.7, 0.12, d - 0.7, '#9fcf74', false);
+      this.tree(x0 + w * 0.32, z0 + d * 0.35, 0.45, top + 0.12); if (rnd() < 0.6) this.tree(x0 + w * 0.68, z0 + d * 0.62, 0.38, top + 0.12);
+    } else if (!o.glass && o.cornice !== null && w > 2 && d > 2 && rnd() < 0.45) {
+      this.box(x0 + w * 0.15, top, z0 + d * 0.5, Math.min(1, w * 0.3), 0.75, Math.min(0.9, d * 0.3), '#c4bdb2'); // stair bulkhead / plant room
     }
     return top;
   }
@@ -184,10 +199,14 @@ export class World {
   }
 
   /* ---------- small things ---------- */
-  tree(x: number, z: number, s = 1) {
-    this.cyl(x, 0, z, 0.15, 0.12, 0.9 * s, '#7a5236', 5);
-    const m = new THREE.Mesh(new THREE.IcosahedronGeometry(0.85 * s, 0), new THREE.MeshLambertMaterial({ color: pick(['#7fb862', '#98c96f', '#6aa155', '#8cbf5f']), flatShading: true }));
-    m.position.set(x, 0.9 * s + 0.6 * s, z); m.rotation.y = rnd() * 3; this.add(m);
+  /** A rounded, soft tree: a cluster of smooth blobs on a trunk (all trees are instanced in finish()). */
+  tree(x: number, z: number, s = 1, y0 = 0) {
+    const top = y0 + 0.9 * s, base = new THREE.Color(pick(GREENS)), a = rnd() * 6.28;
+    this.trunks.push([x, y0, z, 0.9 * s]);
+    this.crowns.push([x, top + 0.75 * s, z, 0.95 * s, base]);
+    this.crowns.push([x + Math.cos(a) * 0.6 * s, top + 0.45 * s, z + Math.sin(a) * 0.6 * s, 0.68 * s, base.clone().offsetHSL(0, 0, -0.04)]);
+    this.crowns.push([x - Math.cos(a + 1) * 0.55 * s, top + 0.5 * s, z - Math.sin(a + 1) * 0.55 * s, 0.62 * s, base.clone().offsetHSL(0.01, 0, 0.03)]);
+    this.crowns.push([x + 0.1 * s, top + 1.35 * s, z - 0.1 * s, 0.55 * s, base.clone().offsetHSL(0, 0, 0.07)]);
   }
   person(x: number, z: number) {
     this.box(x - 0.13, 0.1, z - 0.13, 0.26, 0.5, 0.26, pick(['#3f7fbf', '#d94a3a', '#f2c230', '#5aa469', '#8e6cc2', '#2f3a48']));
@@ -249,8 +268,15 @@ export class World {
     g.translate(x0 + w / 2, y0 + h / 2, z0 + d / 2);
     this.filler.push(g);
   }
-  /** Merge the context city into one mesh (call once, after building). */
+  /** Instance the trees and merge the context city into one mesh (call once, after building). */
   finish() {
+    const M = new THREE.Matrix4(), Q = new THREE.Quaternion(), P = new THREE.Vector3(), S = new THREE.Vector3();
+    const crowns = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1, 2), new THREE.MeshLambertMaterial({ color: '#ffffff' }), this.crowns.length);
+    this.crowns.forEach(([x, y, z, r, c], i) => { crowns.setMatrixAt(i, M.compose(P.set(x, y, z), Q, S.set(r, r * 0.92, r))); crowns.setColorAt(i, c); });
+    const tg = new THREE.CylinderGeometry(0.11, 0.15, 1, 6); tg.translate(0, 0.5, 0);
+    const trunks = new THREE.InstancedMesh(tg, lam('#7a5236'), this.trunks.length);
+    this.trunks.forEach(([x, y, z, h], i) => trunks.setMatrixAt(i, M.compose(P.set(x, y, z), Q, S.set(1, h, 1))));
+    this.add(crowns); this.add(trunks); this.crowns = []; this.trunks = [];
     if (!this.filler.length) return;
     const [c, g] = canvas(12, 4), [e, ge] = canvas(12, 4);
     g.fillStyle = '#fff'; g.fillRect(0, 0, 12, 4); ge.fillStyle = '#000'; ge.fillRect(0, 0, 12, 4);

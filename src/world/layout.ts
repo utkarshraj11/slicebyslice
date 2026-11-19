@@ -69,10 +69,11 @@ export function buildWorld(): World {
   const hood = (id: HoodId, x0: number, z0: number, x1: number, z1: number, y1: number) => { W.hood = id; W.hoods[id] = { x0, z0, x1, z1, y1 }; W.pave(x0, z0, x1 - x0, z1 - z0); };
 
   /* ---------- the plate: harbour water on a diorama base, then the three landmasses ---------- */
-  W.box(-88, -5, -82, 166, 4, 164, [lam('#8a6a45'), lam('#8a6a45'), lam('#6fb7c4'), lam('#6b5236'), lam('#a07a52'), lam('#a07a52')], false);
-  W.land(-76, -14, 38, 46);                                    // New Jersey (Hoboken); the Hudson runs x -38..-30
+  // the plate is exactly the land's bounding rectangle (inset a hair so the land's cut faces win), so the rivers run off its edges
+  W.box(-75.98, -5, -73.98, 143.96, 4, 149.96, [lam('#8a6a45'), lam('#8a6a45'), lam('#6fb7c4'), lam('#6b5236'), lam('#a07a52'), lam('#a07a52')], false);
+  W.land(-76, -74, 38, 150);                                   // New Jersey, the whole west edge (Weehawken, Hoboken, Jersey City); the Hudson runs x -38..-30
   W.land(-30, -74, 42, 88); W.land(-26, 14, 38, 26); W.land(-20, 40, 24, 6); // Manhattan, narrowing to the Battery
-  W.land(22, 6, 46, 70);                                        // Brooklyn; the East River runs x 12..22
+  W.land(22, -74, 46, 150);                                     // Brooklyn (and Greenpoint / Long Island City to the north), the whole east edge; the East River runs x 12..22
   W.land(-24, 56, 10, 10);                                      // Liberty Island
 
   /* ---------- Hoboken: Washington St north-south, Monroe St to the west, the Terminal at the south-east ---------- */
@@ -94,7 +95,10 @@ export function buildWorld(): World {
   for (const z of [23.4, 25.6]) W.box(-39.4, -1, z, 3, 1.1, 1.2, '#c9a77c');
   W.car('z', -8, 28, -53.1, 2.2, '#f2c230'); W.car('z', 28, -8, -51.7, 2, '#3f7fbf'); W.car('x', -72, -43, 1.2, 2, '#ece4d5');
   for (let i = 0; i < 4; i++) W.person(-50.6 + (i % 2) * 0.3, -4.6 + i * 0.5);
-  trees(W, -75, -13, -73, 31, 6);
+  // the rest of the Jersey shore, north and south of Hoboken
+  W.hood = null;
+  W.context(-76, -74, -40, -11, [2, 4]); W.park(-40, -74, 2, 63); trees(W, -39.8, -73, -38.4, -12, 8);
+  W.context(-76, 31, -40, 76, [2, 4]); W.park(-40, 30, 2, 46); trees(W, -39.8, 31, -38.4, 75, 8);
 
   /* ---------- Central Park & Columbus Circle ---------- */
   W.hood = null;
@@ -203,12 +207,13 @@ export function buildWorld(): World {
   W.building(39.1, 10.2, 2, 2, 3, '#c27a5c', { y0: ct, cornice: '#5b4f45' }); W.box(39.6, ct + 1.2, 12.2, 1, 1, 0.06, '#fff8ec');
   for (let i = 0; i < 6; i++) W.person(30.6 + i * 0.5, 27.8 - (i % 2) * 0.2);
   W.car('z', 8, 32, 27.4, 2, '#f2c230'); W.car('x', 26.6, 46, 15.2, 2, '#3f7fbf'); W.car('x', 46, 26.6, 26.2, 1.8, '#ece4d5');
-  W.boat('z', -60, 70, 17, 1.6); W.boat('z', 70, -60, -34, 1.4, '#ece4d5'); W.boat('x', -20, 30, 52, 1.2);
+  W.boat('z', -60, 70, 17, 1.6); W.boat('z', 70, -60, -34, 1.4, '#ece4d5'); W.boat('x', -36, 20, 52, 1.2);
 
   /* ---------- context Brooklyn (and Prospect Park) between DUMBO and Midwood ---------- */
   W.hood = null;
   W.context(22, 32, 68, 50, [2, 5], [[32, 38, 46, 50]]); W.park(32.4, 38.4, 13, 11.4); trees(W, 33, 39, 45, 49.4, 16);
-  W.context(46, 6, 68, 32, [3, 6]);
+  W.context(46, 6, 68, 32, [2, 4]);
+  W.context(25, -74, 68, 6, [2, 4]); W.park(22, -74, 3, 82); trees(W, 22.3, -73, 24.7, 7, 12); // Greenpoint / Long Island City waterfront
   W.context(22, 50, 44, 76, [2, 4]);
 
   /* ---------- Midwood: Avenue J east-west, the B/Q in its cut, Di Fara at E 15th St ---------- */
