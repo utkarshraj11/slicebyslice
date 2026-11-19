@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { createMap, type MapHandle } from '../world/map';
-import { attachMap, mapView, openPlace, focusHood, tapBackground, rotate, getState } from '../store';
+import { attachMap, mapView, openPlace, focusHood, tapBackground, syncRot, getState } from '../store';
 
 const TOD = ['☀ Day', '◐ Dusk', '☾ Night'];
 
@@ -16,7 +16,7 @@ export function MapView() {
       onPin: openPlace,
       onHood: focusHood,
       onBackground: tapBackground,
-      onTurn: rotate,
+      onRotate: syncRot,
       // written straight to the DOM: this runs on camera frames
       onScale: (m, px, z) => {
         bar.current!.style.width = px.toFixed(1) + 'px';

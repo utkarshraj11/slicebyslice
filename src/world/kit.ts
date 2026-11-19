@@ -174,8 +174,11 @@ export class World {
   }
   /** A pizzeria: building + storefront + pin. Registers the pin under `id`. */
   pizza(id: string, x0: number, z0: number, w: number, d: number, floors: number, wall: string, front: Dir, o: { sign?: string; awn?: [string, string]; glass?: boolean; tank?: boolean } = {}) {
+    const n0 = this.root.children.length;
     const top = this.building(x0, z0, w, d, floors, wall, { fronts: [front], shop: true, glass: o.glass, tank: o.tank });
     this.storefront(x0, z0, w, d, front, o.awn ?? pick(AWN), o.sign);
+    // tag the building so a click on it (not just the pin) opens the review
+    for (const c of this.root.children.slice(n0)) c.traverse(m => (m.userData.place = id));
     this.pins[id] = { pos: new THREE.Vector3(x0 + w / 2, top + 0.6, z0 + d / 2), facing: front, hood: this.hood!, box: { x0, z0, x1: x0 + w, z1: z0 + d, y1: top } };
   }
 

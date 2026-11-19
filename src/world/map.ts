@@ -17,8 +17,8 @@ export interface MapCallbacks {
   onPin(id: string): void;
   onHood(id: HoodId): void;
   onBackground(): void;
-  /** right- or shift-drag turned the view a quarter turn (+1 / -1) */
-  onTurn(dir: number): void;
+  /** the user dragged the view round; k is the nearest quarter-turn view (for the store's rotation state) */
+  onRotate(k: number): void;
   /** camera changed: a round scale-bar length, its width on screen, and zoom % */
   onScale(metres: number, px: number, pct: number): void;
 }
@@ -37,6 +37,10 @@ export interface MapHandle {
 }
 
 const M_PER_UNIT = 4;
+/** Size of one art pixel in CSS px: lower is sharper (1 ≈ full resolution, 3 = chunky). */
+const PIXEL_CSS = 1.5;
+/** Radians of turn per px of horizontal drag. */
+const TURN = 0.008;
 const ELEV = Math.atan(1 / Math.SQRT2); // true isometric tilt
 const UP = new THREE.Vector3(0, 1, 0);
 const WORLD: Bounds = { x0: -76, z0: -74, x1: 68, z1: 76, y1: 12 };
@@ -60,11 +64,12 @@ export function createMap(host: HTMLDivElement, overlay: HTMLDivElement, cb: Map
 
   let Wpx = innerWidth, Hpx = innerHeight;
   const renderer = new THREE.WebGLRenderer({ antialias: false });
-  renderer.setPixelRatio(1); renderer.setSize(Wpx, Hpx); renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.BasicShadowMap;
+  const dpr = Math.min(devicePixelRatio || 1, 2);
+  renderer.setPixelRatio(dpr); renderer.setSize(Wpx, Hpx); renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.BasicShadowMap;
   host.appendChild(renderer.domElement);
   const cam = new THREE.OrthographicCamera(-1, 1, 1, -1, 1, 1200);
   const composer = new EffectComposer(renderer);
-  composer.addPass(new RenderPixelatedPass(Wpx < 760 ? 2 : 3, scene, cam, { normalEdgeStrength: 0.35, depthEdgeStrength: 0.5 }));
+  composer.addPass(new RenderPixelatedPass(Math.max(1, Math.round(PIXEL_CSS * dpr)), scene, cam, { normalEdgeStrength: 0.35, depthEdgeStrength: 0.5 }));
   composer.addPass(new OutputPass());
   const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -87,7 +92,7 @@ export function createMap(host: HTMLDivElement, overlay: HTMLDivElement, cb: Map
   /** Slide a point along the view direction onto the ground plane. */
   const ground = (p: THREE.Vector3, th: number) => { const { f } = basis(th); return p.addScaledVector(f, -p.y / f.y); };
   const px = () => Hpx / viewH; // screen px per world unit
-  let lastScale = '';
+  let lastScale = '', lastNorth = NaN;
   function apply() {
     cam.position.copy(target).addScaledVector(dirOf(theta), 500); cam.up.copy(UP); cam.lookAt(target);
     const a = Wpx / Hpx; Object.assign(cam, { top: viewH / 2, bottom: -viewH / 2, left: (-viewH * a) / 2, right: (viewH * a) / 2 });
@@ -95,6 +100,9 @@ export function createMap(host: HTMLDivElement, overlay: HTMLDivElement, cb: Map
     const ppm = px() / M_PER_UNIT, m = [5, 10, 20, 50, 100, 200, 500, 1000, 2000].find(v => v * ppm >= 60) ?? 2000;
     const key = m + ':' + Math.round(viewH);
     if (key !== lastScale) { lastScale = key; cb.onScale(m, m * ppm, Math.round((100 * 200) / viewH)); }
+    // compass needle: screen angle of world north (−z), 0° = up
+    const { r, u } = basis(theta), deg = Math.round((Math.atan2(-r.z, -u.z) * 180) / Math.PI);
+    if (deg !== lastNorth) { lastNorth = deg; document.documentElement.style.setProperty('--north', deg + 'deg'); }
   }
 
   /** Screen area not covered by the header, panel, hood bar. */
@@ -131,7 +139,9 @@ export function createMap(host: HTMLDivElement, overlay: HTMLDivElement, cb: Map
   }
   /** Goal azimuth for rotation k, the short way round from where we are. */
   const goalTheta = () => { const g = thetaOf(rotK); return theta + (((g - theta) % (2 * Math.PI)) + 3 * Math.PI) % (2 * Math.PI) - Math.PI; };
-  function refit(dur = 1100, done?: () => void) { const th = goalTheta(), f = fit(boundsFor(cb.getView()), th); flyTo(f.target, f.viewH, th, dur, done); }
+  /** After a free drag-turn, framing keeps the user's angle until a quarter turn is asked for. */
+  let keepTheta = false;
+  function refit(dur = 1100, done?: () => void) { const th = keepTheta ? theta : goalTheta(), f = fit(boundsFor(cb.getView()), th); flyTo(f.target, f.viewH, th, dur, done); }
   const clampH = (h: number) => Math.min(320, Math.max(10, h));
 
   /* ---------- pins and labels (DOM, projected each frame) ---------- */
@@ -156,8 +166,10 @@ export function createMap(host: HTMLDivElement, overlay: HTMLDivElement, cb: Map
   function placeOverlay() {
     for (const id in pinEls) { const p = W.pins[id].pos, [x, y] = toScreen(p.x, p.y, p.z); pinEls[id].style.transform = `translate(${x.toFixed(1)}px,${y.toFixed(1)}px)`; }
     for (const h of HOOD_IDS) {
-      // hang the label under the corner nearest the camera (unique at every azimuth; edge midpoints tie on square hoods and flicker)
-      const b = W.hoods[h]!, [x, y] = toScreen(Math.sin(theta) > 0 ? b.x1 : b.x0, 0, Math.cos(theta) > 0 ? b.z1 : b.z0);
+      // hang the label where a line from the neighbourhood's centre toward the camera leaves it: one point, moving smoothly as the view turns
+      const b = W.hoods[h]!, hw = (b.x1 - b.x0) / 2, hd = (b.z1 - b.z0) / 2, dx = Math.sin(theta), dz = Math.cos(theta);
+      const t = Math.min(hw / Math.max(1e-6, Math.abs(dx)), hd / Math.max(1e-6, Math.abs(dz)));
+      const [x, y] = toScreen(b.x0 + hw + dx * t, 0, b.z0 + hd + dz * t);
       labelEls[h]!.style.transform = `translate(${x.toFixed(1)}px,${(y + 8).toFixed(1)}px)`;
     }
     overlay.classList.toggle('near', viewH < 70);
@@ -192,7 +204,7 @@ export function createMap(host: HTMLDivElement, overlay: HTMLDivElement, cb: Map
   /* ---------- input ---------- */
   const el = renderer.domElement;
   const pts = new Map<number, { x: number; y: number }>();
-  let drag: { x: number; y: number; moved: boolean; turn: boolean; tx: number } | null = null, pinch = 0;
+  let drag: { x: number; y: number; moved: boolean; pan: boolean } | null = null, pinch = 0, mid: [number, number] | null = null;
   const panBy = (dx: number, dy: number) => { const { r, u } = basis(theta), s = px(); target.addScaledVector(r, -dx / s).addScaledVector(u, dy / s); ground(target, theta); };
   function zoomAt(f: number, cx: number, cy: number) {
     const { r, u } = basis(theta), s = px(), ox = cx - Wpx / 2, oy = cy - Hpx / 2;
@@ -202,33 +214,48 @@ export function createMap(host: HTMLDivElement, overlay: HTMLDivElement, cb: Map
   }
   const ray = new THREE.Raycaster();
   function tap(cx: number, cy: number) {
+    // a pizzeria's outline on screen wins even when a nearer building hides it: its pin is always drawn on top
+    const f = basis(theta).f, onScreen = Object.keys(W.pins).map(id => {
+      const b = W.pins[id].box, box = new THREE.Box3(new THREE.Vector3(b.x0, 0, b.z0), new THREE.Vector3(b.x1, b.y1, b.z1)), r = rectOf(box);
+      return { id, inside: cx >= r.x0 && cx <= r.x1 && cy >= r.y0 && cy <= r.y1, depth: box.getCenter(new THREE.Vector3()).dot(f) };
+    }).filter(x => x.inside).sort((a, b) => a.depth - b.depth)[0];
+    if (onScreen) return cb.onPin(onScreen.id);
     ray.setFromCamera(new THREE.Vector2((cx / Wpx) * 2 - 1, -(cy / Hpx) * 2 + 1), cam);
-    const hit = ray.intersectObjects(W.root.children, true)[0], v = cb.getView();
+    // first hit that's actually drawn (raycasting ignores .visible, and the cutaway hides buildings)
+    const shown = (o: THREE.Object3D | null): boolean => !o || (o.visible && shown(o.parent));
+    const hit = ray.intersectObjects(W.root.children, true).find(x => (x.object as THREE.Mesh).isMesh && shown(x.object)), v = cb.getView();
+    // a pizzeria's walls, awning, sign, or the pavement right in front of it open its review
+    const place = (hit?.object.userData.place as string | undefined) ?? (hit && Object.keys(W.pins).find(id => {
+      const b = W.pins[id].box; return hit.point.x > b.x0 - 1.2 && hit.point.x < b.x1 + 1.2 && hit.point.z > b.z0 - 1.2 && hit.point.z < b.z1 + 1.2 && hit.point.y < 1;
+    }));
+    if (place) return cb.onPin(place);
     const h = hit && HOOD_IDS.find(id => { const b = W.hoods[id]!; return hit.point.x >= b.x0 && hit.point.x <= b.x1 && hit.point.z >= b.z0 && hit.point.z <= b.z1; });
     if (h && (v.mode === 'overview' || v.curHood !== h)) cb.onHood(h); else cb.onBackground();
   }
   const onDown = (e: PointerEvent) => {
     pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (pts.size === 2) { const [a, b] = [...pts.values()]; pinch = Math.hypot(a.x - b.x, a.y - b.y); drag = null; return; }
-    drag = { x: e.clientX, y: e.clientY, moved: false, turn: e.button === 2 || e.shiftKey, tx: e.clientX };
+    drag = { x: e.clientX, y: e.clientY, moved: false, pan: e.button === 2 || e.shiftKey };
     anim = null;
   };
   const onMove = (e: PointerEvent) => {
     if (!pts.has(e.pointerId)) return;
     const prev = pts.get(e.pointerId)!; pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (pts.size === 2) {
-      const [a, b] = [...pts.values()], d = Math.hypot(a.x - b.x, a.y - b.y);
-      if (pinch) { zoomAt(pinch / d, (a.x + b.x) / 2, (a.y + b.y) / 2); apply(); }
-      pinch = d; return;
+      const [a, b] = [...pts.values()], d = Math.hypot(a.x - b.x, a.y - b.y), c: [number, number] = [(a.x + b.x) / 2, (a.y + b.y) / 2];
+      if (pinch) { zoomAt(pinch / d, c[0], c[1]); if (mid) panBy(c[0] - mid[0], c[1] - mid[1]); apply(); cutDirty = true; }
+      pinch = d; mid = c; return;
     }
     if (!drag) return;
     if (!drag.moved && Math.hypot(e.clientX - drag.x, e.clientY - drag.y) > 6) { drag.moved = true; el.setPointerCapture(e.pointerId); host.classList.add('dragging'); }
     if (!drag.moved) return;
-    if (drag.turn) { const d = e.clientX - drag.tx; if (Math.abs(d) > 110) { drag.tx = e.clientX; cb.onTurn(d > 0 ? 1 : -1); } return; }
-    panBy(e.clientX - prev.x, e.clientY - prev.y); apply();
+    if (drag.pan) panBy(e.clientX - prev.x, e.clientY - prev.y);
+    else { theta -= (e.clientX - prev.x) * TURN; keepTheta = true; } // turn about the screen centre, content follows the cursor
+    apply();
   };
   const onUp = (e: PointerEvent) => {
-    pts.delete(e.pointerId); if (pts.size < 2) pinch = 0;
+    pts.delete(e.pointerId); if (pts.size < 2) { pinch = 0; mid = null; }
+    if (drag?.moved && !drag.pan) cb.onRotate(Math.round((-Math.PI / 4 - theta) / (Math.PI / 2)));
     if (drag && !drag.moved && e.button !== 2) tap(e.clientX, e.clientY);
     if (drag?.moved) cutDirty = true;
     drag = null; host.classList.remove('dragging');
@@ -267,7 +294,7 @@ export function createMap(host: HTMLDivElement, overlay: HTMLDivElement, cb: Map
     refit: (dur = 1100) => refit(dur),
     setActivePin: id => { activeId = id; cutDirty = true; if (!id) cutaway(); for (const k in pinEls) pinEls[k].classList.toggle('active', k === id); },
     setOverview: on => overlay.classList.toggle('ov', on),
-    setRotation: k => new Promise<void>(res => { rotK = ((k % 4) + 4) % 4; refit(900, res); }),
+    setRotation: k => new Promise<void>(res => { rotK = ((k % 4) + 4) % 4; keepTheta = false; refit(900, res); }),
     facing: id => W.pins[id].facing,
     zoomBy: f => { flyTo(target.clone(), clampH(viewH * f), theta, 350); },
     setTime,
