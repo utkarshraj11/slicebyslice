@@ -8,7 +8,7 @@ const STYLES = ['▦ Pixel', '✎ Sketch'];
 /** The map. React renders an empty host and overlay once; the engine (world/map.ts) owns the canvas, pins and labels. */
 export function MapView() {
   const host = useRef<HTMLDivElement>(null), overlay = useRef<HTMLDivElement>(null);
-  const [tod, setTod] = useState(0), [style, setStyle] = useState(0);
+  const [tod, setTod] = useState(0), [style, setStyle] = useState(0); // Pixel, Day on every screen
   const map = useRef<MapHandle | null>(null), bar = useRef<HTMLDivElement>(null), barLabel = useRef<HTMLSpanElement>(null), pct = useRef<HTMLSpanElement>(null);
 
   useEffect(() => {
@@ -29,6 +29,7 @@ export function MapView() {
     const s = getState();
     m.setOverview(s.mode === 'overview');
     m.setActivePin(s.curPlace);
+    m.setStyle(style);
     attachMap(m);
     return () => { attachMap(null); map.current = null; m.destroy(); };
   }, []);
@@ -42,6 +43,7 @@ export function MapView() {
       <button onClick={nextStyle} title="Switch between pixel art and a hand-drawn sketch">{STYLES[style]}</button>
       <button onClick={nextTod} title="Change the light">{TOD[tod]}</button>
     </div>
+    {style === 1 && <p className="credits">Real buildings: NYC Open Data · © OpenStreetMap contributors · NYS ITS / NJOGIS aerials</p>}
     <div className="scalebar" aria-hidden="true"><span ref={barLabel} /><div ref={bar} /></div>
     <div className="zoomctl" role="group" aria-label="Zoom">
       <button aria-label="Zoom in" title="Zoom in" onClick={() => map.current?.zoomBy(1 / 1.5)}>+</button>
