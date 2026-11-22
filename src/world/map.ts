@@ -1,7 +1,6 @@
-/* The live map: a three.js scene rendered at low resolution through RenderPixelatedPass (chunky pixels,
-   edge outlines from depth/normals), an orthographic camera that frames a place / neighbourhood / the whole map
-   and swings smoothly between the four quarter-turn views, pointer/wheel/pinch input, and DOM pins and labels
-   projected on top. UI state lives in store.ts; the map reads it through `getView` and reports taps via callbacks. */
+/* The live map: a three.js scene rendered through one of two styles (Pixel: RenderPixelatedPass; Sketch: sketch.ts),
+   an orthographic camera that frames a place / neighbourhood / the whole map, turns freely when dragged and swings
+   to the four quarter-turn views on request, pointer/wheel/pinch input, and DOM pins and labels projected on top. UI state lives in store.ts; the map reads it through `getView` and reports taps via callbacks. */
 import * as THREE from 'three';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPixelatedPass } from 'three/addons/postprocessing/RenderPixelatedPass.js';
@@ -179,6 +178,9 @@ export function createMap(host: HTMLDivElement, overlay: HTMLDivElement, cb: Map
   const v3 = new THREE.Vector3();
   const toScreen = (x: number, y: number, z: number) => { v3.set(x, y, z).project(cam); return [((v3.x + 1) / 2) * Wpx, ((1 - v3.y) / 2) * Hpx] as const; };
   const labelSize: Partial<Record<HoodId, [number, number]>> = {};
+  // measured lazily; re-measure once the web fonts swap in and when the phone CSS may apply
+  const remeasure = () => { for (const k in labelSize) delete labelSize[k as HoodId]; };
+  void document.fonts?.ready.then(remeasure);
   function placeOverlay() {
     const pinBoxes: [number, number, number, number][] = [];
     for (const id in pinEls) {
@@ -319,7 +321,7 @@ export function createMap(host: HTMLDivElement, overlay: HTMLDivElement, cb: Map
     apply(); cutDirty = true;
   };
   const onCtx = (e: Event) => e.preventDefault();
-  const onResize = () => { Wpx = innerWidth; Hpx = innerHeight; renderer.setSize(Wpx, Hpx); composer.setSize(Wpx, Hpx); refit(0); };
+  const onResize = () => { Wpx = innerWidth; Hpx = innerHeight; renderer.setSize(Wpx, Hpx); composer.setSize(Wpx, Hpx); remeasure(); refit(0); };
   el.addEventListener('pointerdown', onDown); el.addEventListener('pointermove', onMove);
   el.addEventListener('pointerup', onUp); el.addEventListener('pointercancel', onUp);
   el.addEventListener('wheel', onWheel, { passive: false }); el.addEventListener('contextmenu', onCtx);
@@ -371,7 +373,7 @@ export function createMap(host: HTMLDivElement, overlay: HTMLDivElement, cb: Map
       el.removeEventListener('pointerup', onUp); el.removeEventListener('pointercancel', onUp);
       el.removeEventListener('wheel', onWheel); el.removeEventListener('contextmenu', onCtx); overlay.removeEventListener('wheel', onWheel);
       removeEventListener('resize', onResize);
-      composer.dispose(); sketchPass.dispose(); renderer.dispose(); el.remove(); overlay.innerHTML = '';
+      composer.dispose(); sketchPass.dispose(); renderer.dispose(); renderer.forceContextLoss(); el.remove(); overlay.innerHTML = '';
     },
   };
 }

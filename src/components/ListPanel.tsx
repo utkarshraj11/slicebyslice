@@ -15,7 +15,7 @@ export function ListPanel({ open, by }: { open: boolean; by: State['listBy'] }) 
   const rated = PLACES.filter(p => p.rating != null).sort((a, b) => b.rating! - a.rating!);
   const unrated = PLACES.filter(p => p.rating == null);
   return (
-    <aside className={'panel list' + (open ? ' open' : '')} id="list" aria-hidden={!open}>
+    <aside className={'panel list' + (open ? ' open' : '')} id="list" inert={!open}>
       <button className="x" aria-label="Close" onClick={() => closeList()}>✕</button>
       <div className="cardin">
         <h2 style={{ fontFamily: 'Fraunces,Georgia,serif', fontSize: 30, margin: '0 44px 10px 0', fontWeight: 800 }}>All {PLACES.length} spots</h2>

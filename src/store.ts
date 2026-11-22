@@ -33,7 +33,7 @@ function setHash(h: string) {
   try { if (location.hash.slice(1) !== h) { suppressHash = true; location.hash = h; } } catch { /* ignore */ }
 }
 export function routeHash() {
-  const h = decodeURIComponent(location.hash.slice(1));
+  const h = location.hash.slice(1); // ids are plain ASCII; decoding would throw on a malformed link like #%
   if (PLACES.some(p => p.id === h)) openPlace(h);
   else if (isHood(h)) focusHood(h);
   else if (state.mode !== 'overview') showOverview();
@@ -64,16 +64,14 @@ export function openPlace(id: string) {
   setMode('hood', p.hood);
   // turn the map so the storefront faces the viewer
   const need = map ? rotShowing(map.facing(id), state.rot) : state.rot;
-  if (map && need !== state.rot) { set({ rot: need }); void map.setRotation(need); }
-  else refit(1200);
+  if (map) { set({ rot: need }); void map.setRotation(need); }
   setHash(id);
 }
 
 /* ---------- view rotation ---------- */
 export function setRotation(k: number) {
   k = ((k % 4) + 4) % 4;
-  if (k === state.rot) return;
-  set({ rot: k });
+  set({ rot: k }); // even when k is the current quarter: after a free drag this straightens the view
   void map?.setRotation(k);
 }
 /** The user dragged the view round to near view k: record it without moving the camera. */
