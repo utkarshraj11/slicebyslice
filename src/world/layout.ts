@@ -7,7 +7,8 @@
 import * as THREE from 'three';
 import type { HoodId } from '../data/places';
 import type { Dir } from './compass';
-import { World, BRICK, BROWN, STONE, GLASS, lam, pick, rr, rnd, reseed, at } from './kit';
+import { World, BRICK, BROWN, STONE, GLASS, lam, pick, rr, rnd, reseed, at, type RealPlace } from './kit';
+import REAL from '../data/real.json';
 
 type R = [number, number, number, number]; // x0, z0, x1, z1
 
@@ -86,7 +87,7 @@ export function buildWorld(): World {
   grid(W, [[-68.6, -62.6], [-60.2, -54], [-50.8, -45]], [[-8, 0], [2.4, 9], [11.4, 19.6], [22, 28]], { pal: BROWN, floors: [3, 5], skip: hobSkip, shop: 0.25 }, [[2, 3]]);
   W.pizza('bennys', -50, -5, 3.4, 3.6, 4, '#8a5a47', 'W', { sign: "BENNY TUDINO'S" });
   W.pizza('basiles', -58.2, 14, 3.4, 3.4, 4, '#b4644a', 'E', { sign: "BASILE'S", awn: ['#2f6b4f', '#f4efe3'] });
-  W.pizza('panello', -67.8, 3.4, 4.4, 4.4, 5, '#9d4b38', 'W', { sign: 'PANELLO', awn: ['#2f3a48', '#f2c230'] });
+  W.pizza('panello', -67.8, 3.4, 4.4, 4.4, 5, '#9d4b38', 'W', { sign: 'PANELLO', awn: ['#2f3a48', '#efe1c8'] });
   // Hoboken Terminal: long copper-roofed shed and its clock tower, ferry slips into the river
   W.building(-50, 23, 10.4, 4.6, 2, '#e6dccb', { cornice: null, roof: '#7fb7a3', fronts: ['S'] });
   W.building(-42.4, 23.6, 1.8, 1.8, 7, '#efe8da', { cornice: '#7fb7a3', y0: 2 });
@@ -196,7 +197,7 @@ export function buildWorld(): World {
   W.pizza('pops', -16.6, -59.2, 3.4, 3, 5, '#c27a5c', 'E', { sign: "POP'S PIZZA" });
   W.building(-7.6, -59.2, 5, 3.6, 18, pick(GLASS), { glass: true });            // Hearst Tower
   W.building(-20.2, -37.2, 7, 3.4, 4, '#9aa3a8', { fronts: ['E'], shop: true });  // Port Authority
-  W.pizza('lazzaras', -6, -37.2, 3, 3.4, 5, '#b5654a', 'S', { sign: "LAZZARA'S", awn: ['#2f3a48', '#f2c230'] });
+  W.pizza('lazzaras', -6, -37.2, 3, 3.4, 5, '#b5654a', 'S', { sign: "LAZZARA'S", awn: ['#2f3a48', '#efe1c8'] });
   W.building(-2.6, -37.2, 1.8, 3.4, 9, pick(BRICK), { fronts: ['S'], tank: true });
   for (const [x0, w, fl] of [[4.2, 3.6, 13], [8, 3.4, 11]] as const) { // Times Square: towers wrapped in billboards
     W.building(x0, -45.4, w, 3.6, fl, pick(STONE), { fronts: ['W', 'S'], shop: true });
@@ -206,7 +207,10 @@ export function buildWorld(): World {
   W.building(3.8, -30, 6, 5.6, 5, '#e0cfae', { cornice: null, roof: '#ece3d0' });
   W.building(4.8, -29, 4, 3.6, 16, '#e0cfae', { cornice: null, roof: '#ece3d0', y0: 5 });
   W.building(5.5, -28.4, 2.6, 2.4, 6, '#e0cfae', { cornice: null, roof: '#ece3d0', y0: 21 });
-  W.cyl(6.8, 27, -27.2, 0.6, 0.4, 3, '#d8cfbd', 8); W.cyl(6.8, 30, -27.2, 0.12, 0.06, 5, '#8a7f74', 6);
+  W.box(6, 27, -27.9, 1.6, 1.2, 1.4, '#e0cfae');                                                     // the last setback under the crown (a plain box: building() would draw from the layout RNG)
+  { const crown = new THREE.MeshLambertMaterial({ color: '#efe6d2', emissive: '#ffd27a', emissiveIntensity: 0 }); W.glow.push(crown); // lit at dusk and night
+    W.add(at(new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.62, 2.4, 8), crown), 6.8, 29.4, -27.2)); }
+  W.cyl(6.8, 30.6, -27.2, 0.12, 0.06, 5, '#8a7f74', 6);                                              // the mast
   W.car('z', -60, -24, -11.6, 2.6, '#f2c230'); W.car('z', -24, -60, -9.2, 2.4, '#f2c230'); W.car('z', -55, -26, -11.6, 2.4, '#ece4d5');
   W.car('x', -30, 12, -40, 1.8, '#d9473a', { bus: true }); W.car('x', 12, -30, -38.9, 2.6, '#f2c230');
 
@@ -258,6 +262,14 @@ export function buildWorld(): World {
     W.box(x, -1, 19.6, 1.6, 5.5, 4.4, ST);
     W.box(x, 4.5, 19.6, 1.6, 8, 1, ST); W.box(x, 4.5, 23, 1.6, 8, 1, ST); W.box(x, 4.5, 21.6, 1.6, 8, 0.4, ST);
     W.box(x, 10.5, 19.6, 1.6, 2.5, 4.4, ST); W.box(x - 0.15, 13, 19.45, 1.9, 0.4, 4.7, '#a89070');
+    // the pointed Gothic arches over the two roadway openings
+    for (const [z0, z1] of [[20.6, 21.6], [22, 23]]) {
+      const half = (z1 - z0) / 2, sh = new THREE.Shape([new THREE.Vector2(-half, 0), new THREE.Vector2(half, 0), new THREE.Vector2(half, 1.6), new THREE.Vector2(-half, 1.6)]);
+      const hole = new THREE.Path(); hole.moveTo(-half, 0); hole.lineTo(-half, 0.7);
+      hole.quadraticCurveTo(-half, 1.25, 0, 1.45); hole.quadraticCurveTo(half, 1.25, half, 0.7); hole.lineTo(half, 0); sh.holes.push(hole);
+      const arch = new THREE.Mesh(new THREE.ExtrudeGeometry(sh, { depth: 1.6, bevelEnabled: false }), lam(ST));
+      W.add(at(arch, x, 8.9, (z0 + z1) / 2, Math.PI / 2));
+    }
   }
   const cable = new THREE.LineBasicMaterial({ color: '#3b3836' });
   const cy = (x: number) => (x < 14 ? 5 + ((x - 5) / 9) * 8 : x > 20 ? 13 - ((x - 20) / 12) * 8 : 6.5 + 6.5 * ((x - 17) / 3) ** 2);
@@ -302,6 +314,8 @@ export function buildWorld(): World {
   for (const [x, z] of [[62.6, 26.55], [61.15, 28]] as const) W.box(x - 0.6, sb + 1.2, z - 0.06, 1.2, 1.2, 0.08, '#fff8ec'); // clock faces
   W.add(at(new THREE.Mesh(new THREE.SphereGeometry(1.5, 16, 10, 0, Math.PI * 2, 0, Math.PI / 2), lam('#c9a24a')), 62.6, sb + 3.3, 28));
   const arena = W.cyl(52.2, 0, 28.6, 3.2, 3.4, 2.4, '#8a4a32', 24); arena.scale.set(1.15, 1, 0.9);           // the arena, rusted steel
+  for (const [y, c] of [[0.7, '#6e3a28'], [1.6, '#6e3a28']] as const) { const b = W.cyl(52.2, y, 28.6, 3.45, 3.47, 0.22, c, 24); b.scale.set(1.15, 1, 0.9); } // weathering-steel bands
+  { const oc = W.cyl(52.2, 2.4, 28.6, 2.2, 2.6, 0.18, '#c9bfae', 24); oc.scale.set(1.15, 1, 0.9); }                // the canopy roof
   W.cyl(52.2, 2.4, 28.6, 2.6, 2.6, 0.1, '#6b3a2a', 24).scale.set(1.15, 1, 0.9);
   fillBlock(W, 48.4, 16.4, 56, 23, { pal: [...STONE, ...BRICK], floors: [5, 10], shop: 0.6 });
   fillBlock(W, 58.4, 16.4, 68, 23, { pal: [...STONE, ...GLASS], floors: [8, 14], shop: 0.5, glass: false });
@@ -365,6 +379,11 @@ export function buildWorld(): World {
   W.cyl(35.6, 0, -12.6, 0.6, 0.45, 14, '#8f4635', 10);                                                // its smokestack
   W.park(29.2, -8.2, 8.6, 11.6); trees(W, 30, -7.6, 37, 2.6, 6);                                       // Domino Park
   W.building(38.6, -14.6, 4, 4, 14, pick(GLASS), { glass: true });                                    // a new tower behind it
+  // inland, east of the waterfront: a dense forest (asked for by the owner; the detail RNG keeps the layout as it was)
+  W.forest(43.2, -61, 67.6, 5.4);         // east of Bushwick Inlet Park and the refinery, down to DUMBO
+  W.forest(46.2, -69.6, 67.6, -61);        // past the digester eggs
+  W.forest(48.2, -73.6, 67.6, -69.6);      // past the end of Newtown Creek
+  W.forest(38.4, -10, 43.2, 5.4);          // between Domino Park and DUMBO
   /* ---------- Green-Wood Cemetery and Park Slope, down toward Midwood ---------- */
   W.road(22, 50, 22, 2); W.road(33, 52, 2.4, 24); W.road(35.4, 61, 8.6, 2.2); W.road(35.4, 69, 8.6, 2.2);
   W.slab(22, 52, 11, 24, '#86b866', 0.08);                                                            // the cemetery's lawns
@@ -387,6 +406,7 @@ export function buildWorld(): World {
   W.building(45, 57.6, 4, 1.4, 2, '#d9cdb8', { fronts: ['N', 'S'], cornice: '#3f8f5a', y0: 0 });  // station house over the cut
   W.pizza('difara', 55, 62.8, 3, 3.4, 2, '#d8c7a6', 'N', { sign: 'DI FARA', awn: ['#7a2e2a', '#efe1c8'] });
   for (const [x0, x1] of [[48.6, 52], [54.2, 60], [62.2, 68]]) {
+    for (const [z0, z1] of [[50, 51], [54, 55.4], [65.6, 67], [70, 76]]) W.park(x0, z0, x1 - x0, z1 - z0); // front lawns and back gardens
     for (let x = x0 + 0.5; x + 2.4 <= x1 - 0.3; x += 2.6) {
       if (!(x < 58 && x + 2.4 > 55)) W.building(x, 62.8, 2.4, 2.6, rnd() < 0.5 ? 1 : 2, pick(['#d8c7a6', '#c9b8a6', '#e3dccd', '#b4644a']), { fronts: ['N'], shop: true });
       W.building(x, 55.6, 2.4, 2.6, rnd() < 0.5 ? 1 : 2, pick(['#d8c7a6', '#c9b8a6', '#e3dccd', '#b4644a']), { fronts: ['S'], shop: true });
@@ -405,6 +425,9 @@ export function buildWorld(): World {
   const torch = new THREE.MeshLambertMaterial({ color: '#f2c230', emissive: '#f2c230', emissiveIntensity: 0.5 }); W.glow.push(torch);
   W.add(at(new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.4, 0.4), torch), -18.6, 8.6, 60.9));
   trees(W, -23.5, 56.5, -14.5, 65.5, 6);
+
+  // Sketch style: real buildings beside each pizzeria (tools/fetch-real.mjs)
+  for (const [id, r] of Object.entries(REAL as Record<string, RealPlace>)) if (W.pins[id]) W.realPatch(id, r, `${import.meta.env.BASE_URL}real/${id}.png`);
 
   W.finish();
   return W;

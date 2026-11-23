@@ -49,8 +49,8 @@ const TURN = 0.008;
 const IDLE = 6, DRIFT = 0.05;
 /** Flick momentum: top coasting speed (rad/s) and decay rate (1/s); the coast is at most SPIN_MAX / SPIN_DECAY rad. */
 const SPIN_MAX = 2.5, SPIN_DECAY = 5;
-/** Keep the view's centre over the plate, so the island can't be lost in empty paper. */
-const PAN_LIMIT = { x0: -82, x1: 74, z0: -80, z1: 82 };
+/** How far past the "Whole map" framing you can zoom out, and how much of the screen's edge may show paper when zoomed in. */
+const ZOOM_OUT_GIVE = 1.08, PAN_GIVE = 0.85;
 const ELEV = Math.atan(1 / Math.SQRT2); // true isometric tilt
 const UP = new THREE.Vector3(0, 1, 0);
 const WORLD: Bounds = { x0: -76, z0: -74, x1: 68, z1: 76, y1: 12 };
@@ -83,7 +83,11 @@ export function createMap(host: HTMLDivElement, overlay: HTMLDivElement, cb: Map
   const sketchPass = new SketchPass(scene, cam, dpr); sketchPass.enabled = false;
   composer.addPass(pixelPass); composer.addPass(sketchPass);
   composer.addPass(new OutputPass());
-  function setStyle(k: number) { pixelPass.enabled = k !== 1; sketchPass.enabled = k === 1; host.classList.toggle('sketch', k === 1); }
+  function setStyle(k: number) {
+    pixelPass.enabled = k !== 1; sketchPass.enabled = k === 1; host.classList.toggle('sketch', k === 1);
+    hidden.forEach(o => (o.visible = true)); hidden.length = 0; cutDirty = true; // the cutaway re-runs over the new set
+    W.sketchOnly.forEach(o => (o.visible = k === 1)); W.pixelOnly.forEach(o => (o.visible = k !== 1));
+  }
   const still = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
   function setTime(k: number) {
@@ -132,8 +136,8 @@ export function createMap(host: HTMLDivElement, overlay: HTMLDivElement, cb: Map
     if (v.mode === 'hood' && v.curHood) return W.hoods[v.curHood]!;
     return Wpx < 760 ? WORLD_PHONE : WORLD;
   }
-  function fit(b: Bounds, th: number) {
-    const { r, u } = basis(th), a = avail(cb.getView());
+  function fit(b: Bounds, th: number, v = cb.getView()) {
+    const { r, u } = basis(th), a = avail(v);
     let r0 = Infinity, r1 = -Infinity, u0 = Infinity, u1 = -Infinity;
     for (const x of [b.x0, b.x1]) for (const y of [0, b.y1]) for (const z of [b.z0, b.z1]) {
       const p = new THREE.Vector3(x, y, z), pr = p.dot(r), pu = p.dot(u);
@@ -156,7 +160,9 @@ export function createMap(host: HTMLDivElement, overlay: HTMLDivElement, cb: Map
   /** After a free drag-turn, framing keeps the user's angle until a quarter turn is asked for. */
   let keepTheta = false;
   function refit(dur = 1100, done?: () => void) { spin = 0; touch(); const th = keepTheta ? theta : goalTheta(), f = fit(boundsFor(cb.getView()), th); flyTo(f.target, f.viewH, th, dur, done); }
-  const clampH = (h: number) => Math.min(320, Math.max(10, h));
+  /** Zoom range: in to 10 units, out to just past the "Whole map" framing for this screen and angle. */
+  const OVERVIEW: MapView = { mode: 'overview', curHood: null, curPlace: null, panelOpen: false };
+  const clampH = (h: number) => Math.min(fit(boundsFor(OVERVIEW), theta, OVERVIEW).viewH * ZOOM_OUT_GIVE, Math.max(10, h));
 
   /* ---------- pins and labels (DOM, projected each frame) ---------- */
   const pinEls: Record<string, HTMLButtonElement> = {};
@@ -179,7 +185,8 @@ export function createMap(host: HTMLDivElement, overlay: HTMLDivElement, cb: Map
   const toScreen = (x: number, y: number, z: number) => { v3.set(x, y, z).project(cam); return [((v3.x + 1) / 2) * Wpx, ((1 - v3.y) / 2) * Hpx] as const; };
   const labelSize: Partial<Record<HoodId, [number, number]>> = {};
   // measured lazily; re-measure once the web fonts swap in and when the phone CSS may apply
-  const remeasure = () => { for (const k in labelSize) delete labelSize[k as HoodId]; };
+  const tagW: Record<string, number> = {};
+  const remeasure = () => { for (const k in labelSize) delete labelSize[k as HoodId]; for (const k in tagW) delete tagW[k]; };
   void document.fonts?.ready.then(remeasure);
   function placeOverlay() {
     const pinBoxes: [number, number, number, number][] = [];
@@ -188,6 +195,7 @@ export function createMap(host: HTMLDivElement, overlay: HTMLDivElement, cb: Map
       pinEls[id].style.transform = `translate(${x.toFixed(1)}px,${y.toFixed(1)}px)`;
       pinBoxes.push([x - 16, y - 46, x + 16, y + 2]);
     }
+    if (viewH < 70) placeTags(pinBoxes);
     if (!overlay.classList.contains('ov')) return void overlay.classList.toggle('near', viewH < 70);
     // labels avoid pins and each other: try spots around the neighbourhood, nearest-to-camera first; else take the least overlap
     const taken = pinBoxes.slice();
@@ -216,12 +224,29 @@ export function createMap(host: HTMLDivElement, overlay: HTMLDivElement, cb: Map
     overlay.classList.toggle('near', viewH < 70);
   }
 
+  /** Name tags: right of the pin, else left, else hidden, so no tag covers another tag or a pin (the open place's always shows). */
+  function placeTags(pinBoxes: [number, number, number, number][]) {
+    const ids = Object.keys(pinEls), at = (id: string) => pinBoxes[ids.indexOf(id)];
+    const order = ids.slice().sort((a, b) => (b === activeId ? 1 : 0) - (a === activeId ? 1 : 0) || at(b)[3] - at(a)[3]); // open place, then nearest first
+    const taken: number[][] = [];
+    const hits = (r: number[], own: string) => taken.some(q => r[0] < q[2] && r[2] > q[0] && r[1] < q[3] && r[3] > q[1]) ||
+      ids.some(id => id !== own && (([a, b, c, d]) => r[0] < c && r[2] > a && r[1] < d && r[3] > b)(at(id)));
+    for (const id of order) {
+      const el = pinEls[id], tag = el.lastElementChild as HTMLElement;
+      const w = (tagW[id] ||= tag.offsetWidth), [x0, , , y1] = at(id), x = x0 + 16, y = y1 - 2;
+      const right = [x + 14, y - 50, x + 14 + w, y - 30], left = [x - 14 - w, y - 50, x - 14, y - 30];
+      const side = id === activeId || !hits(right, id) ? right : !hits(left, id) ? left : null;
+      el.classList.toggle('tagleft', side === left); el.classList.toggle('tagless', !side);
+      if (side) taken.push(side);
+    }
+  }
+
   /* ---------- cutaway: hide whatever stands between the camera and the open storefront ---------- */
   let activeId: string | null = null, cutDirty = false;
   const hidden: THREE.Object3D[] = [], boxes = new Map<THREE.Object3D, THREE.Box3>();
   const solids: THREE.Mesh[] = [];
   // (instanced trees are one mesh: hiding it would cut away every tree at once)
-  W.root.traverse(o => { const m = o as THREE.Mesh; if (m.isMesh && m.castShadow && m.parent === W.root && !(o as THREE.InstancedMesh).isInstancedMesh) solids.push(m); });
+  W.root.traverse(o => { const m = o as THREE.Mesh; if (m.isMesh && m.castShadow && m.parent === W.root && !(o as THREE.InstancedMesh).isInstancedMesh && !m.userData.merged) solids.push(m); });
   function rectOf(b: THREE.Box3) {
     let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
     for (const x of [b.min.x, b.max.x]) for (const y of [b.min.y, b.max.y]) for (const z of [b.min.z, b.max.z]) {
@@ -237,7 +262,7 @@ export function createMap(host: HTMLDivElement, overlay: HTMLDivElement, cb: Map
     const r = rectOf(own), d0 = depth(own);
     for (const m of solids) {
       let b = boxes.get(m); if (!b) boxes.set(m, (b = new THREE.Box3().setFromObject(m)));
-      if (b.max.y < 0.5 || b.intersectsBox(own) || depth(b) >= d0 - 0.5) continue;
+      if (!m.visible || b.max.y < 0.5 || b.intersectsBox(own) || depth(b) >= d0 - 0.5) continue; // (style-hidden ones stay hidden)
       const q = rectOf(b);
       if (q.x0 < r.x1 && q.x1 > r.x0 && q.y0 < r.y1 && q.y1 > r.y0) { m.visible = false; hidden.push(m); }
     }
@@ -247,7 +272,19 @@ export function createMap(host: HTMLDivElement, overlay: HTMLDivElement, cb: Map
   const el = renderer.domElement;
   const pts = new Map<number, { x: number; y: number }>();
   let drag: { x: number; y: number; moved: boolean; pan: boolean } | null = null, pinch = 0, mid: [number, number] | null = null;
-  const clampTarget = () => { target.x = Math.min(PAN_LIMIT.x1, Math.max(PAN_LIMIT.x0, target.x)); target.z = Math.min(PAN_LIMIT.z1, Math.max(PAN_LIMIT.z0, target.z)); };
+  /** Keep the island on screen, per screen axis: when the view is wider than the island, the island stays near the middle
+      (it may drift 15 % of the half-view, never into a corner); when narrower, the screen edge may pass its edge a little (PAN_GIVE). */
+  const plate = [[WORLD.x0, WORLD.z0], [WORLD.x1, WORLD.z0], [WORLD.x0, WORLD.z1], [WORLD.x1, WORLD.z1]].map(([x, z]) => new THREE.Vector3(x, 0, z));
+  const clampTarget = () => {
+    const { r, u } = basis(theta);
+    const axis = (d: THREE.Vector3, half: number) => {
+      const p = plate.map(q => q.dot(d)), p0 = Math.min(...p), p1 = Math.max(...p), h = half * PAN_GIVE, t = target.dot(d);
+      const c = (p0 + p1) / 2, slack = half - (p1 - p0) / 2;
+      const [lo, hi] = slack > 0 ? [c - Math.min(slack, half * 0.15), c + Math.min(slack, half * 0.15)] : [p0 + h, p1 - h];
+      target.addScaledVector(d, Math.min(hi, Math.max(lo, t)) - t);
+    };
+    axis(r, (viewH * Wpx) / Hpx / 2); axis(u, viewH / 2); ground(target, theta);
+  };
   const panBy = (dx: number, dy: number) => { const { r, u } = basis(theta), s = px(); target.addScaledVector(r, -dx / s).addScaledVector(u, dy / s); ground(target, theta); clampTarget(); };
   /** Spin left over from a drag-turn (rad/s), decaying; and the time of the last user input (for the idle drift). */
   let spin = 0, lastInput = performance.now(), lastMove = 0;
@@ -298,7 +335,7 @@ export function createMap(host: HTMLDivElement, overlay: HTMLDivElement, cb: Map
     if (drag.pan) panBy(e.clientX - prev.x, e.clientY - prev.y);
     else { // turn about the screen centre, content follows the cursor; remember the speed for the release
       const d = -(e.clientX - prev.x) * TURN, now = performance.now(), dt = Math.max(8, now - lastMove) / 1000;
-      theta += d; keepTheta = true; spin = Math.max(-SPIN_MAX, Math.min(SPIN_MAX, spin * 0.5 + (d / dt) * 0.5)); lastMove = now;
+      theta += d; keepTheta = true; clampTarget(); spin = Math.max(-SPIN_MAX, Math.min(SPIN_MAX, spin * 0.5 + (d / dt) * 0.5)); lastMove = now;
     }
     touch(); apply();
   };
@@ -340,9 +377,9 @@ export function createMap(host: HTMLDivElement, overlay: HTMLDivElement, cb: Map
       if (k >= 1) { const d = anim.done; anim = null; cutDirty = true; d?.(); }
     }
     if (!anim && !drag && !still) {
-      if (Math.abs(spin) > 0.02) { theta += spin * dt; spin *= Math.exp(-SPIN_DECAY * dt); cutDirty = true; }
+      if (Math.abs(spin) > 0.02) { theta += spin * dt; spin *= Math.exp(-SPIN_DECAY * dt); clampTarget(); cutDirty = true; }
       else if (spin) spin = 0;
-      else if (overlay.classList.contains('ov') && !cb.getView().panelOpen && now - lastInput > IDLE * 1000) { theta -= DRIFT * dt; keepTheta = true; }
+      else if (overlay.classList.contains('ov') && !cb.getView().panelOpen && now - lastInput > IDLE * 1000) { theta -= DRIFT * dt; keepTheta = true; clampTarget(); }
     }
     if (!anim) { const k = (((Math.round((-Math.PI / 4 - theta) / (Math.PI / 2)) % 4) + 4) % 4); if (k !== syncedK) { syncedK = k; rotK = k; cb.onRotate(k); } }
     if (!still) for (const m of W.movers) {
