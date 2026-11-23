@@ -2,7 +2,7 @@
 
 A personal pizza-review site. It shows a pixel-art, isometric 3D map of New York City and Hoboken, in the style of isometriccities.com's landmark dioramas: one connected little city on a floating diorama plate, Hoboken across the Hudson on the west, Manhattan in the middle, Brooklyn across the East River on the east. Each pizzeria the owner visited is a storefront with a pin. Clicking a pin opens a review card with a rating, a written review and two photos.
 
-It's a **Vite + React + TypeScript + three.js** app. (It started as a single SVG `index.html`, in git history. A later SVG engine built from real NYC tax-lot / OpenStreetMap data, with real street layouts, is kept on the `visual-refresh` branch; the three.js rewrite replaced it on `main` in Nov 2026.) The only outside resource is Google Fonts (Fraunces and DM Sans), and the page falls back to system fonts without it.
+It's a **Vite + React + TypeScript + three.js** app. (It started as a single SVG `index.html`, in git history. A later SVG engine built from real NYC tax-lot / OpenStreetMap data, with real street layouts, is in git history (commit `81a990c`, before the rewrite); the three.js rewrite replaced it on `main` in Nov 2026.) The only outside resource is Google Fonts (Fraunces and DM Sans), and the page falls back to system fonts without it.
 
 ```bash
 pnpm install
