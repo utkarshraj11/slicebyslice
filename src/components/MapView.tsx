@@ -43,7 +43,8 @@ export function MapView() {
       <button onClick={nextStyle} title="Switch between pixel art and a hand-drawn sketch">{STYLES[style]}</button>
       <button onClick={nextTod} title="Change the light">{TOD[tod]}</button>
     </div>
-    {style === 1 && <p className="credits">Real buildings: NYC Open Data · © OpenStreetMap contributors · NYS ITS / NJOGIS aerials</p>}
+    {/* the real rows show in both styles; the real context and its aerial roofs only in Sketch */}
+    <p className="credits">© OpenStreetMap contributors · NYC Open Data · NJGIN · Mapillary · Wikimedia Commons{style === 1 && ' · NYS ITS / NJOGIS aerials'}</p>
     <div className="scalebar" aria-hidden="true"><span ref={barLabel} /><div ref={bar} /></div>
     <div className="zoomctl" role="group" aria-label="Zoom">
       <button aria-label="Zoom in" title="Zoom in" onClick={() => map.current?.zoomBy(1 / 1.5)}>+</button>

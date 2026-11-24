@@ -2,13 +2,16 @@
    Manhattan in the middle (Central Park and Columbus Circle at the north, Midtown, the West Village,
    the Financial District at the south tip), Brooklyn across the East River on the east (DUMBO opposite FiDi,
    joined by the Brooklyn Bridge; Midwood further south), the Statue of Liberty in the harbour.
-   Each pizzeria is on its real street and side; streets between clusters are left out.
+   Each pizzeria is on its real street and side; streets between clusters are left out. The pizzerias and the
+   buildings either side of them are rebuilt as they stand at the end (src/data/rows.ts); a pizza(...) call below
+   only says where (its street and facing) and keeps the layout RNG where the approved map had it.
    World: x = east, z = south, 1 unit ≈ 4 m; blocks are ~6 units. */
 import * as THREE from 'three';
 import type { HoodId } from '../data/places';
 import type { Dir } from './compass';
-import { World, BRICK, BROWN, STONE, GLASS, lam, pick, rr, rnd, reseed, at, type RealPlace } from './kit';
+import { World, BRICK, BROWN, STONE, GLASS, lam, pick, rr, rnd, reseed, at, detailState, type RealPlace } from './kit';
 import REAL from '../data/real.json';
+import { ROWS } from '../data/rows';
 
 type R = [number, number, number, number]; // x0, z0, x1, z1
 
@@ -78,16 +81,16 @@ export function buildWorld(): World {
   W.land(-24, 56, 10, 10);                                      // Liberty Island
 
   /* ---------- Hoboken: Washington St north-south, Monroe St to the west, the Terminal at the south-east ---------- */
-  hood('hoboken', -72, -8, -39, 28, 14);
+  hood('hoboken', -76, -8, -39, 28, 14);                        // to the plate's west edge: Panello is on Monroe St's west side
   for (const [x0, x1] of [[-71, -68.6], [-62.6, -60.2], [-54, -50.8]]) W.road(x0, -8, x1 - x0, 36);
   W.road(-45, -8, 2.4, 27.6);                                   // Hudson St
   for (const [z0, z1] of [[0, 2.4], [9, 11.4], [19.6, 22]]) W.road(-72, z0, 29.4, z1 - z0);
   W.park(-42.6, -8, 3.6, 27.6); trees(W, -42.2, -7, -39.6, 18, 7);
   const hobSkip: R[] = [[-50.2, -5.2, -46.4, -1.2], [-58.4, 13.8, -54.6, 17.6], [-68, 3.2, -63.2, 8]];
   grid(W, [[-68.6, -62.6], [-60.2, -54], [-50.8, -45]], [[-8, 0], [2.4, 9], [11.4, 19.6], [22, 28]], { pal: BROWN, floors: [3, 5], skip: hobSkip, shop: 0.25 }, [[2, 3]]);
-  W.pizza('bennys', -50, -5, 3.4, 3.6, 4, '#8a5a47', 'W', { sign: "BENNY TUDINO'S" });
-  W.pizza('basiles', -58.2, 14, 3.4, 3.4, 4, '#b4644a', 'E', { sign: "BASILE'S", awn: ['#2f6b4f', '#f4efe3'] });
-  W.pizza('panello', -67.8, 3.4, 4.4, 4.4, 5, '#9d4b38', 'W', { sign: 'PANELLO', awn: ['#2f3a48', '#efe1c8'] });
+  W.pizza('bennys', -58.2, -5, 3.4, 3.6, 4, '#8a5a47', 'E', { sign: "BENNY TUDINO'S" });          // west side of Washington St
+  W.pizza('basiles', -50, 14, 3.4, 3.4, 4, '#b4644a', 'W', { sign: "BASILE'S", awn: ['#2f6b4f', '#f4efe3'] }); // east side, the Newark St corner
+  W.pizza('panello', -77.2, 3.4, 4.4, 4.4, 5, '#9d4b38', 'E', { sign: 'PANELLO', awn: ['#2f3a48', '#efe1c8'] }); // west side of Monroe St
   // Hoboken Terminal: long copper-roofed shed and its clock tower, ferry slips into the river
   W.building(-50, 23, 10.4, 4.6, 2, '#e6dccb', { cornice: null, roof: '#7fb7a3', fronts: ['S'] });
   W.building(-42.4, 23.6, 1.8, 1.8, 7, '#efe8da', { cornice: '#7fb7a3', y0: 2 });
@@ -95,7 +98,7 @@ export function buildWorld(): World {
   W.box(-41.6, 7.4, 25.4, 0.4, 0.4, 0.06, '#fff8ec');
   for (const z of [23.4, 25.6]) W.box(-39.4, -1, z, 3, 1.1, 1.2, '#c9a77c');
   W.car('z', -8, 28, -53.1, 2.2, '#f2c230'); W.car('z', 28, -8, -51.7, 2, '#3f7fbf'); W.car('x', -72, -43, 1.2, 2, '#ece4d5');
-  for (let i = 0; i < 4; i++) W.person(-50.6 + (i % 2) * 0.3, -4.6 + i * 0.5);
+  for (let i = 0; i < 4; i++) W.person(-54.5 + (i % 2) * 0.3, -4.6 + i * 0.5);
   trees(W, -75, -8, -73, 27, 5);
 
   /* ---------- the Weehawken cliffs: the Palisades rise behind the Jersey waterfront north of Hoboken ---------- */
@@ -224,8 +227,8 @@ export function buildWorld(): World {
   const vilSkip: R[] = [[-14.4, -13.6, -10.6, -9.8], [-14.6, -9.6, -10.6, -5.8], [-7, -3, -3.2, 1], [-3.8, -0.2, -0.6, 3.4]];
   grid(W, [[-22, -10], [-7.6, 0], [3.6, 12]], [[-22, -16.4], [-14.2, -6], [-3.8, 4], [6.2, 12]], { pal: [...BRICK, ...BROWN], floors: [3, 6], skip: vilSkip, shop: 0.35 }, [[2, 1], [1, 3]]);
   W.pizza('lindustrie', -13.8, -13.4, 2.8, 3.2, 4, '#9d4b38', 'N', { sign: "L'INDUSTRIE", awn: ['#2f3a48', '#f4efe3'] });
-  W.pizza('mamas', -14.2, -9.2, 3.4, 3, 4, '#c27a5c', 'E', { sign: "MAMA'S TOO" });
-  W.pizza('johns', -6.8, -2.6, 3.4, 3.2, 4, '#8f4635', 'W', { sign: "JOHN'S", awn: ['#7a2e2a', '#efe1c8'] });
+  W.pizza('mamas', -6.8, -13.4, 3.4, 3, 4, '#c27a5c', 'W', { sign: "MAMA'S TOO" });               // east side of Bleecker, the Christopher St corner
+  W.pizza('johns', -14.2, -2.6, 3.4, 3.2, 4, '#8f4635', 'E', { sign: "JOHN'S", awn: ['#7a2e2a', '#efe1c8'] }); // west side of Bleecker
   W.pizza('joes', -3.6, 0, 2.8, 3.2, 4, '#b4644a', 'S', { sign: "JOE'S PIZZA" });
   // West 4th St courts, across Carmine from Joe's
   W.slab(-6.8, 7, 6.2, 4.4, '#c8553d', 0.1);
@@ -246,7 +249,7 @@ export function buildWorld(): World {
   W.road(-26, 28, 38, 2.4); W.road(-26, 21, 24.2, 2.2); W.road(-22, 35, 34, 2);
   const fidiSkip: R[] = [[-19, 30.4, -13, 35.6], [-10.8, 23.2, -6, 27.4], [-1.8, 19.4, 12, 28]];
   grid(W, [[-26, -22], [-19, -13], [-10.8, -4], [-1.8, 12]], [[14.4, 21], [23.2, 28], [30.4, 35], [37, 40]], { pal: [...STONE, ...GLASS], floors: [10, 22], skip: fidiSkip, shop: 0.3 });
-  W.pizza('upside', 0, 24, 3.2, 3.2, 14, pick(STONE), 'S', { sign: 'UPSIDE', tank: true });
+  W.pizza('upside', 0, 31.2, 3.2, 3.2, 14, pick(STONE), 'N', { sign: 'UPSIDE', tank: true });       // south side of Wall St
   W.building(3.4, 24.2, 4, 3, 18, pick(GLASS), { glass: true });
   temple(W, -18.6, 31.2, 4.4, 3.8, 5, 'E');                         // the Stock Exchange, facing Broad St
   temple(W, -10, 24, 3.6, 2.6, 3, 'S');                             // Federal Hall, on Wall St
@@ -293,11 +296,11 @@ export function buildWorld(): World {
   W.road(26.6, 14.6, 19.4, 2.2); W.road(26.6, 25, 19.4, 2.4);
   const dumSkip: R[] = [[29.4, 19.4, 35.4, 24.4], [30, 28, 34, 31.6], [38, 17.4, 41.4, 20.8], [38, 8.6, 42, 14]];
   grid(W, [[29.4, 35.4], [37.4, 42], [44.4, 46]], [[8, 14.6], [16.8, 25], [27.4, 32]], { pal: BRICK, floors: [5, 9], skip: dumSkip, shop: 0.3 });
-  W.pizza('grimaldis', 30.2, 28.2, 3.6, 3.2, 3, '#a9563f', 'N', { sign: "GRIMALDI'S" });
+  W.pizza('grimaldis', 38.2, 21, 3.6, 3.2, 3, '#a9563f', 'S', { sign: "GRIMALDI'S" });            // north side of Front St, the Old Fulton corner
   W.pizza('ignazios', 38.2, 17.6, 3, 3, 2, '#e3dccd', 'N', { sign: "IGNAZIO'S", awn: ['#2f6b4f', '#f4efe3'] });
   const ct = W.building(38.2, 8.8, 3.8, 5, 12, '#b4644a', { fronts: ['S'], tank: false }); // the clock tower building
   W.building(39.1, 10.2, 2, 2, 3, '#c27a5c', { y0: ct, cornice: '#5b4f45' }); W.box(39.6, ct + 1.2, 12.2, 1, 1, 0.06, '#fff8ec');
-  for (let i = 0; i < 6; i++) W.person(30.6 + i * 0.5, 27.8 - (i % 2) * 0.2);
+  for (let i = 0; i < 6; i++) W.person(38.6 + i * 0.5, 24.6 + (i % 2) * 0.2);
   W.car('z', 8, 32, 27.4, 2, '#f2c230'); W.car('x', 26.6, 46, 15.2, 2, '#3f7fbf'); W.car('x', 46, 26.6, 26.2, 1.8, '#ece4d5');
   W.boat('z', -74, 70, 17, 1.6); W.boat('z', 70, -60, -34, 1.4, '#ece4d5'); W.boat('x', -36, 20, 52, 1.2);
 
@@ -426,8 +429,21 @@ export function buildWorld(): World {
   W.add(at(new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.4, 0.4), torch), -18.6, 8.6, 60.9));
   trees(W, -23.5, 56.5, -14.5, 65.5, 6);
 
-  // Sketch style: real buildings beside each pizzeria (tools/fetch-real.mjs)
+  /* ---------- the real rows: each pizzeria and the buildings either side of it, as they stand (src/data/rows.ts) ---------- */
+  // last, so they never re-roll the layout above; the detail RNG goes back after them, so the street life stays put
+  const detail = detailState();
+  // where seven pizzerias stood before they moved to their real side of the street: buildings like their blocks'
+  W.building(-50, -5, 3.4, 3.6, 3, pick(BROWN), { fronts: ['W', 'E'], shop: true });             // across Washington St from Benny's
+  W.building(-58.2, 14, 3.4, 3.4, 4, pick(BROWN), { fronts: ['W', 'E'], shop: true });           // across from Basile's
+  W.building(-67.8, 3.4, 4.4, 4.4, 4, pick(BRICK), { fronts: ['W', 'E'] });                       // across Monroe St from Panello
+  W.building(-14.2, -9.2, 3.4, 3, 5, pick(BRICK), { fronts: ['E', 'S'], shop: true });           // across Bleecker from Mama's Too
+  W.building(-6.8, -2.6, 3.4, 3.2, 4, pick(BROWN), { fronts: ['W'], shop: true });                // across Bleecker from John's
+  W.building(0, 24, 3.2, 3.2, 14, pick(STONE), { fronts: ['S'], shop: true, tank: true });       // across Wall St from Upside
+  W.building(30.2, 28.2, 3.6, 3.2, 3, pick(BRICK), { fronts: ['N'], shop: true });               // across Front St from Grimaldi's
+  for (const [id, row] of Object.entries(ROWS)) if (W.pins[id]) W.realRow(id, row);
+  // Sketch style: real buildings around each row (tools/fetch-real.mjs)
   for (const [id, r] of Object.entries(REAL as Record<string, RealPlace>)) if (W.pins[id]) W.realPatch(id, r, `${import.meta.env.BASE_URL}real/${id}.png`);
+  detailState(detail);
 
   W.finish();
   return W;

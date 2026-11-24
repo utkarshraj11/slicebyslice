@@ -262,7 +262,7 @@ export function createMap(host: HTMLDivElement, overlay: HTMLDivElement, cb: Map
     const r = rectOf(own), d0 = depth(own);
     for (const m of solids) {
       let b = boxes.get(m); if (!b) boxes.set(m, (b = new THREE.Box3().setFromObject(m)));
-      if (!m.visible || b.max.y < 0.5 || b.intersectsBox(own) || depth(b) >= d0 - 0.5) continue; // (style-hidden ones stay hidden)
+      if (!m.visible || m.userData.row === activeId || b.max.y < 0.5 || b.intersectsBox(own) || depth(b) >= d0 - 0.5) continue; // (style-hidden ones stay hidden; its own row stays)
       const q = rectOf(b);
       if (q.x0 < r.x1 && q.x1 > r.x0 && q.y0 < r.y1 && q.y1 > r.y0) { m.visible = false; hidden.push(m); }
     }

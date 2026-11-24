@@ -1,12 +1,16 @@
 #!/usr/bin/env node
-// Real buildings around each pizzeria, for the Sketch style (after Pocket City's field notes): true footprints and
-// roof heights, with roof colours and faint surface markings sampled from an aerial photograph.
+// Real buildings around each pizzeria (after Pocket City's field notes): true footprints and roof heights, roof colours
+// and faint surface markings sampled from an aerial photograph, and each building's address and storeys from the tax
+// records, so the pizzeria and the buildings either side of it can be built as they stand (src/data/rows.ts).
 //
 //   node tools/fetch-real.mjs            all places      node tools/fetch-real.mjs joes basiles      only these
+//   DEBUG=<dir> node tools/fetch-real.mjs joes    also writes <dir>/joes.png: footprints on the aerial (pizzeria red,
+//                                                 its left neighbour green, its right one blue, street side yellow)
 //
-// Sources (credited in the app): NYC Building Footprints (NYC Open Data), OpenStreetMap contributors (ODbL) for
-// New Jersey footprints, NYS ITS 2022 orthoimagery (New York), NJOGIS 2020 orthoimagery (New Jersey); geocoding by
-// Nominatim (OpenStreetMap). Writes src/data/real.json and public/real/<id>.png (the roof texture). Run once, commit.
+// Sources (credited in the app): NYC Building Footprints and PLUTO (NYC Open Data); OpenStreetMap contributors (ODbL)
+// for New Jersey footprints and NJ MOD-IV tax parcels (NJGIN) for their addresses and storeys; NYS ITS 2022 and NJOGIS
+// 2020 orthoimagery; geocoding by Nominatim (OpenStreetMap). Writes src/data/real.json and public/real/<id>.png (the
+// roof texture). Run once, commit.
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { inflateSync, deflateSync, crc32 } from 'node:zlib';
 import { resolve, dirname } from 'node:path';
@@ -37,14 +41,13 @@ async function get(url, opt = {}, tries = 5) {
     await sleep(2000 * 2 ** i);
   }
 }
-const OVERPASS = ['https://overpass-api.de/api/interpreter', 'https://overpass.private.coffee/api/interpreter', 'https://maps.mail.ru/osm/tools/overpass/api/interpreter'];
-async function overpass(q) {
-  for (let i = 0; i < 9; i++) {
-    const r = await fetch(OVERPASS[i % OVERPASS.length], { method: 'POST', headers: UA, body: new URLSearchParams({ data: q }), signal: AbortSignal.timeout(40000) }).catch(() => null);
-    if (r?.ok) return r.json();
-    await sleep(3000 * (i + 1));
-  }
-  throw new Error('overpass unavailable');
+/** OpenStreetMap ways within m metres of a point, as [lon, lat] lines, from the editing API's map call (one small box;
+    the Overpass mirrors this used before were often down). */
+async function osmWays(lat, lon, m) {
+  const dLat = m / 110540, dLon = m / (Math.cos((lat * Math.PI) / 180) * 111320);
+  const el = (await (await get(`https://api.openstreetmap.org/api/0.6/map.json?bbox=${lon - dLon},${lat - dLat},${lon + dLon},${lat + dLat}`)).json()).elements;
+  const nodes = new Map(el.filter(e => e.type === 'node').map(e => [e.id, [e.lon, e.lat]]));
+  return el.filter(e => e.type === 'way' && e.nodes.every(n => nodes.has(n))).map(e => ({ tags: e.tags ?? {}, line: e.nodes.map(n => nodes.get(n)) }));
 }
 
 /* ---------- minimal PNG (8-bit RGB/RGBA, not interlaced) ---------- */
@@ -87,6 +90,12 @@ const area = p => p.reduce((s, [x, y], i) => { const [X, Y] = p[(i + 1) % p.leng
 const centroid = p => { const n = p.length; return [p.reduce((s, q) => s + q[0], 0) / n, p.reduce((s, q) => s + q[1], 0) / n]; };
 const inside = ([x, y], p) => { let c = false; for (let i = 0, j = p.length - 1; i < p.length; j = i++) { const [xi, yi] = p[i], [xj, yj] = p[j]; if (yi > y !== yj > y && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) c = !c; } return c; };
 const dot = (a, b) => a[0] * b[0] + a[1] * b[1];
+/** The part of polygon p where dot(q, d) >= t (Sutherland-Hodgman against one half-plane). */
+const clipHalf = (p, d, t) => { const o = []; p.forEach((q, i) => { const r = p[(i + 1) % p.length], kq = dot(q, d) - t, kr = dot(r, d) - t;
+  if (kq >= 0) o.push(q); if ((kq >= 0) !== (kr >= 0)) { const s = kq / (kq - kr); o.push([q[0] + (r[0] - q[0]) * s, q[1] + (r[1] - q[1]) * s]); } }); return o; };
+/** Storeys from an NJ MOD-IV building description: "3B-2U-1C-H-BA" is a three-storey brick building, "2.5B-COM" two and a half. */
+const njStoreys = d => { const m = /^(\d+(?:\.\d+)?)\s*[A-Z]/.exec(d ?? ''); return m ? +m[1] : 0; };
+const title = s => s.toLowerCase().replace(/\b[a-z]/g, c => c.toUpperCase()).replace(/\b(\d+)(St|Nd|Rd|Th)\b/g, (_, n, x) => n + x.toLowerCase());
 
 for (const pl of places) {
   if (only.length && !only.includes(pl.id)) continue;
@@ -103,16 +112,32 @@ for (const pl of places) {
   const kx = Math.cos((lat0 * Math.PI) / 180) * 111320, ky = 110540;
   const local = ([lon, lat]) => [(lon - lon0) * kx, (lat - lat0) * ky];
 
-  // footprints: [{ p: ring in metres, h: roof height m, y: year, blk: tax block }]
+  // footprints: [{ p: ring in metres, h: roof height m, y: year, blk: tax block, addr, fl: storeys }]
   let bl = [];
   if (!nj) {
-    const rows = await (await get(`https://data.cityofnewyork.us/resource/5zhs-2jue.json?$where=${encodeURIComponent(`within_circle(the_geom,${lat0},${lon0},${R})`)}&$limit=300`)).json();
-    for (const r of rows) for (const poly of r.the_geom.coordinates) bl.push({ p: poly[0].slice(0, -1).map(local), h: +r.height_roof * 0.3048 || 12, y: +r.construction_year || 0, blk: r.base_bbl?.slice(0, 6) });
-  } else {
-    const j = await overpass(`[out:json][timeout:25];way(around:${R},${lat0},${lon0})["building"];out geom tags;`);
-    for (const wy of j.elements) {
-      const t = wy.tags ?? {}, lv = parseFloat(t['building:levels']);
-      bl.push({ p: wy.geometry.slice(0, -1).map(q => local([q.lon, q.lat])), h: parseFloat(t.height) || (lv ? lv * 3.3 + 1 : 12), y: +t.start_date || 0 });
+    // every footprint touching the square (within_circle would keep only those wholly inside it, dropping big neighbours)
+    const [w0, s0, e0, n0] = [lon0 - R / kx, lat0 - R / ky, lon0 + R / kx, lat0 + R / ky];
+    const rows = await (await get(`https://data.cityofnewyork.us/resource/5zhs-2jue.json?$where=${encodeURIComponent(`intersects(the_geom,'POLYGON((${w0} ${s0},${e0} ${s0},${e0} ${n0},${w0} ${n0},${w0} ${s0}))')`)}&$limit=500`)).json();
+    // the tax lot of each footprint (PLUTO): its address and number of floors
+    const bbls = [...new Set(rows.map(r => r.base_bbl).filter(Boolean))], lots = {};
+    for (let i = 0; i < bbls.length; i += 50)
+      for (const l of await (await get(`https://data.cityofnewyork.us/resource/64uk-42ks.json?$select=bbl,address,numfloors&$where=${encodeURIComponent(`bbl in(${bbls.slice(i, i + 50).join(',')})`)}`)).json()) lots[String(Math.round(+l.bbl))] = l;
+    for (const r of rows) for (const poly of r.the_geom.coordinates) {
+      const lot = lots[r.base_bbl];
+      bl.push({ p: poly[0].slice(0, -1).map(local), h: +r.height_roof * 0.3048 || 12, y: +r.construction_year || 0, blk: r.base_bbl?.slice(0, 6), addr: lot ? title(lot.address) : '', fl: +lot?.numfloors || 0 });
+    }
+  }
+  const ways = await osmWays(lat0, lon0, R + 30);
+  if (nj) {
+    // NJ tax parcels (MOD-IV): address and storeys of the lot each footprint stands on
+    const pj = await (await get(`https://services2.arcgis.com/XVOqAjTOJ5P6ngMu/arcgis/rest/services/Parcels_Composite_NJ_WM/FeatureServer/0/query?where=1%3D1&geometry=${lon0},${lat0}&geometryType=esriGeometryPoint&inSR=4326&outSR=4326&distance=${R + 30}&units=esriSRUnit_Meter&spatialRel=esriSpatialRelIntersects&outFields=PROP_LOC,BLDG_DESC,PCLBLOCK&returnGeometry=true&f=json`)).json();
+    const parcels = (pj.features ?? []).filter(f => f.attributes.PROP_LOC && f.geometry?.rings).map(f => ({ ring: f.geometry.rings[0].map(local), a: f.attributes }));
+    for (const wy of ways.filter(w => w.tags.building && w.line.some(q => Math.hypot(...local(q)) < R))) {
+      const t = wy.tags, p = wy.line.slice(0, -1).map(local);
+      // the parcel under its centre, else the one holding most of its corners (OSM and the parcels are drawn apart by a metre or two)
+      const hold = parcels.map(q => ({ q, n: p.filter(v => inside(v, q.ring)).length })).sort((a, b) => b.n - a.n)[0];
+      const lot = (parcels.find(q => inside(centroid(p), q.ring)) ?? (hold?.n ? hold.q : null))?.a, fl = parseFloat(t['building:levels']) || njStoreys(lot?.BLDG_DESC);
+      bl.push({ p, h: parseFloat(t.height) || (fl ? fl * 3.4 + 1.5 : 12), y: +t.start_date || 0, blk: lot?.PCLBLOCK, addr: lot ? title(lot.PROP_LOC) : t['addr:housenumber'] ? `${t['addr:housenumber']} ${t['addr:street'] ?? ''}`.trim() : '', fl });
     }
   }
   bl = bl.filter(b => b.p.length >= 3 && Math.abs(area(b.p)) > 8);
@@ -132,21 +157,32 @@ for (const pl of places) {
     return s - extent([-d[1], d[0]]) * 0.01; // a tie goes to the narrower frontage
   };
   // the street named in the address, from OpenStreetMap: the frontage faces its nearest point
-  const street = pl.address.split(',')[0].replace(/^\d+\s+/, '').replace(/\bSt$/, 'Street').replace(/\bAve$/, 'Avenue'); // the geocoder wants it spelled out
-  // every stretch of it within 60 m (the geocoder returns only one stretch, which can be blocks away)
-  const ways = (await overpass(`[out:json][timeout:25];way(around:60,${lat0},${lon0})["highway"]["name"="${street}"];out geom;`)).elements;
+  const street = pl.address.split(',')[0].replace(/^\d+\s+/, '').replace(/^([NSEW]) /, (_, d) => ({ N: 'North ', S: 'South ', E: 'East ', W: 'West ' })[d])
+    .replace(/\bSt$/, 'Street').replace(/\bAve$/, 'Avenue'); // the geocoder wants it spelled out
+  // every stretch of it nearby (the geocoder returns only one stretch, which can be blocks away)
   let near = null, nd = Infinity;
-  for (const wy of ways) { const lines = [wy.geometry.map(q => [q.lon, q.lat])];
-    for (const ln of lines) { const pts = ln.map(local); for (let i = 0; i + 1 < pts.length; i++) {
+  for (const wy of ways.filter(w => w.tags.highway && w.tags.name === street)) { const pts = wy.line.map(local);
+    for (let i = 0; i + 1 < pts.length; i++) {
       const [a, b] = [pts[i], pts[i + 1]], ab = [b[0] - a[0], b[1] - a[1]], t = Math.max(0, Math.min(1, dot([c0[0] - a[0], c0[1] - a[1]], ab) / (dot(ab, ab) || 1)));
-      const q = [a[0] + ab[0] * t, a[1] + ab[1] * t], d = Math.hypot(q[0] - c0[0], q[1] - c0[1]); if (d < nd) { nd = d; near = q; } } } }
+      const q = [a[0] + ab[0] * t, a[1] + ab[1] * t], d = Math.hypot(q[0] - c0[0], q[1] - c0[1]); if (d < nd) { nd = d; near = q; } } }
   const toward = near && nd < 40 ? [near[0] - c0[0], near[1] - c0[1]] : null;
   // snap to the nearest of the footprint's four edge directions (no street found: the emptiest side)
   const front = toward ? dirs.slice().sort((a, b) => dot(b, toward) - dot(a, toward))[0] : dirs.slice().sort((a, b) => score(a) - score(b))[0];
   if (!toward) console.log(`  ${street}: not found nearby, guessed the street side`);
   // keep buildings on the pizzeria's side of the street (and in its tax block, where the data says)
   const fl = extent(front) + dot(c0, front);
-  bl = bl.filter(b => b === self || (dot(centroid(b.p), front) < fl - 1 && (!self.blk || b.blk === self.blk)));
+  bl = bl.filter(b => b === self || (dot(centroid(b.p), front) < fl - 1 && (!self.blk || !b.blk || b.blk === self.blk)));
+
+  // the buildings either side, as seen from the street: facades within 4 m of the pizzeria's, the nearest one along the
+  // street on each side (their front 3 m), unless a gap of more than 3 m (a cross street, an alley) comes first
+  const left = [front[1], -front[0]]; // a viewer facing the storefront has this on their left
+  const span = b => { const f0 = Math.max(...b.p.map(q => dot(q, front))), s = clipHalf(b.p, front, f0 - 3).map(q => dot(q, left)); return { f0, a0: Math.min(...s), a1: Math.max(...s) }; };
+  const S = span(self);
+  for (const [side, gap] of [['L', b => b.a0 - S.a1], ['R', b => S.a0 - b.a1]]) {
+    const n = bl.filter(b => b !== self).map(b => ({ b, ...span(b) })).filter(x => Math.abs(x.f0 - S.f0) < 4 && gap(x) > -1.5 && gap(x) < 3 && (side === 'L' ? x.a1 > S.a1 + 1 : x.a0 < S.a0 - 1))
+      .sort((x, y) => gap(x) - gap(y))[0];
+    if (n) n.b.side = side;
+  }
 
   // aerial photo: roof colours and the roof texture
   const dLon = R / kx, dLat = R / ky, bbox = [lon0 - dLon, lat0 - dLat, lon0 + dLon, lat0 + dLat].join(',');
@@ -165,11 +201,13 @@ for (const pl of places) {
     // the texture keeps faint markings: 65 % the roof's own colour, 35 % the photograph
     for (const i of cover) for (let c = 0; c < 3; c++) tex[i * 3 + c] = Math.round(med[c] * 0.65 + rgb[i * 3 + c] * 0.35);
   }
-  if (process.env.DEBUG) { // footprints in white (the pizzeria red), the street side as a line from its centre
-    const dbg = Buffer.from(rgb), dotPx = (x, y, c) => { x |= 0; y |= 0; if (x >= 0 && y >= 0 && x < w && y < h) c.forEach((v, k) => (dbg[(y * w + x) * 3 + k] = v)); };
-    for (const b of bl) b.p.forEach((q, i) => { const [x0, y0] = toPx(q), [x1, y1] = toPx(b.p[(i + 1) % b.p.length]); for (let t = 0; t <= 1; t += 0.02) dotPx(x0 + (x1 - x0) * t, y0 + (y1 - y0) * t, b.self ? [255, 0, 0] : [255, 255, 255]); });
-    const [cx, cy] = toPx(c0); for (let t = 0; t < 30; t++) dotPx(cx + front[0] * t, cy - front[1] * t, [255, 230, 0]);
-    await writeFile(resolve(process.env.DEBUG, `${pl.id}.png`), encodePNG(w, h, dbg));
+  if (process.env.DEBUG) { // three times the size: footprints in white, the pizzeria red, left neighbour green, right blue; the street side yellow
+    const K = 3, W3 = w * K, dbg = Buffer.alloc(W3 * h * K * 3);
+    for (let y = 0; y < h * K; y++) for (let x = 0; x < W3; x++) rgb.copy(dbg, (y * W3 + x) * 3, ((((y / K) | 0) * w + ((x / K) | 0)) * 3), ((((y / K) | 0) * w + ((x / K) | 0)) * 3) + 3);
+    const dotPx = (x, y, c) => { x = (x * K) | 0; y = (y * K) | 0; if (x >= 0 && y >= 0 && x < W3 && y < h * K) c.forEach((v, k) => (dbg[(y * W3 + x) * 3 + k] = v)); };
+    for (const b of bl) b.p.forEach((q, i) => { const [x0, y0] = toPx(q), [x1, y1] = toPx(b.p[(i + 1) % b.p.length]); for (let t = 0; t <= 1; t += 0.005) dotPx(x0 + (x1 - x0) * t, y0 + (y1 - y0) * t, b.self ? [255, 0, 0] : b.side === 'L' ? [0, 230, 0] : b.side === 'R' ? [40, 120, 255] : [255, 255, 255]); });
+    const [cx, cy] = toPx(c0); for (let t = 0; t < 30; t += 0.3) dotPx(cx + front[0] * t, cy - front[1] * t, [255, 230, 0]);
+    await writeFile(resolve(process.env.DEBUG, `${pl.id}.png`), encodePNG(W3, h * K, dbg));
     console.log(`  geocoded ${lat0.toFixed(5)}, ${lon0.toFixed(5)} (${g[0].display_name.slice(0, 60)})`);
   }
   await mkdir(resolve(ROOT, 'public/real'), { recursive: true });
@@ -177,10 +215,12 @@ for (const pl of places) {
 
   const r1 = v => Math.round(v * 10) / 10;
   out[pl.id] = {
-    front: front.map(v => +v.toFixed(4)), half: R,
-    buildings: bl.map(b => ({ p: b.p.map(q => q.map(r1)), h: r1(b.h), y: b.y, roof: b.roof, ...(b.self ? { self: true } : {}) })),
+    lat: +lat0.toFixed(7), lon: +lon0.toFixed(7), front: front.map(v => +v.toFixed(4)), half: R,
+    buildings: bl.map(b => ({ p: b.p.map(q => q.map(r1)), h: r1(b.h), y: b.y, roof: b.roof, addr: b.addr, fl: b.fl, ...(b.self ? { self: true } : {}), ...(b.side ? { side: b.side } : {}) })),
   };
+  const desc = b => b ? `${b.addr || '?'} (${b.fl || '?'} fl, ${r1(span(b).a1 - span(b).a0)} m wide)` : 'none';
   console.log(`  ${bl.length} buildings, street to the ${['E', 'N', 'W', 'S'][((Math.round(Math.atan2(front[1], front[0]) / (Math.PI / 2)) % 4) + 4) % 4]}`);
+  console.log(`  left ${desc(bl.find(b => b.side === 'L'))} | self ${desc(self)} | right ${desc(bl.find(b => b.side === 'R'))}`);
 }
 await writeFile(outFile, JSON.stringify(out));
 console.log('wrote src/data/real.json');

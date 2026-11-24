@@ -7,7 +7,8 @@ import type { HoodId } from '../data/places';
 import type { Dir } from './compass';
 
 export interface Bounds { x0: number; z0: number; x1: number; z1: number; y1: number }
-export interface Pin { pos: THREE.Vector3; facing: Dir; box: Bounds }
+/** A pizzeria's pin: where it floats, the street side, its building's box and (once realRow has run) its whole row's. */
+export interface Pin { pos: THREE.Vector3; facing: Dir; box: Bounds; row?: Bounds }
 /** Loops from a to b (or, with `bounce`, goes back and forth between them). */
 export interface Mover { obj: THREE.Object3D; axis: 'x' | 'z'; a: number; b: number; speed: number; bounce?: boolean }
 
@@ -17,6 +18,8 @@ export const reseed = (n = 20260718) => { seed = n; tseed = n ^ 0x5bd1e995; };
 export const rnd = () => ((seed = (seed * 16807) % 2147483647) - 1) / 2147483646;
 /** Detail RNG (facade texture, roof clutter, queues): its own stream, so adding detail never re-rolls the layout. */
 const trnd = () => ((tseed = (tseed * 48271) % 2147483647) - 1) / 2147483646;
+/** Read (or, given s, set) the detail RNG's state: the real rows and patches put it back, so the street life after them stays put. */
+export const detailState = (s?: number) => (s === undefined ? tseed : (tseed = s));
 const tpick = <T,>(a: readonly T[]): T => a[Math.floor(trnd() * a.length)];
 export const pick = <T,>(a: readonly T[]): T => a[Math.floor(rnd() * a.length)];
 export const rr = (a: number, b: number) => a + rnd() * (b - a);
@@ -41,7 +44,7 @@ const AWN: [string, string][] = [['#d9473a', '#fff6e6'], ['#2f6b4f', '#f4efe3'],
 
 /** Texture px per world unit; one storey is PPU rows. */
 const PPU = 8;
-type Style = 'brick' | 'brown' | 'stone' | 'glass';
+export type Style = 'brick' | 'brown' | 'stone' | 'glass';
 const shade = (hex: string, f: number) => '#' + new THREE.Color(hex).multiplyScalar(f).getHexString();
 const SHOP_BANDS = ['#d9473a', '#2f6b4f', '#2f3a48', '#7a2e2a', '#3f7fbf', '#f2c230', '#5b3d2e', '#e8833a'];
 const styleOf = (wall: string, glass?: boolean): Style =>
@@ -110,6 +113,81 @@ function facadeTex(len: number, floors: number, wall: string, o: { shop?: boolea
   return [c, e] as const;
 }
 
+/** A facade as it stands, read off street photos (src/data/rows.ts). */
+export interface Look {
+  /** brick: lintels and sills; brown: pale trims; stone: string courses; glass: curtain wall */
+  style?: Style;
+  /** windows across each upper storey */
+  bays?: number;
+  /** storeys of windows, when they're taller than a unit each (lofts, cast-iron palazzi); default one per unit */
+  rows?: number;
+  /** lintels, sills and string courses */
+  trim?: string;
+  /** shopfront sign band(s), one per shop across the ground floor */
+  band?: string | string[];
+  /** shopfront frame */
+  frame?: string;
+  /** fire escape, in its iron's colour */
+  escape?: string;
+  /** a little awning over each upper window */
+  winAwn?: string;
+}
+/** Facade texture for a Look (PPU px per unit): `bays` windows on each storey, its own trims, shops and fire escape;
+    `blank` draws a windowless party wall. Detail RNG only (lit windows, grain). */
+function lookTex(len: number, floors: number, wall: string, lk: Look, shop: boolean, blank: boolean) {
+  const w = Math.max(8, Math.round(len * PPU)), h = Math.max(8, Math.round(floors * PPU));
+  const [c, g] = canvas(w, h), [e, ge] = canvas(w, h);
+  ge.fillStyle = '#000'; ge.fillRect(0, 0, w, h);
+  const px = (x: number, y: number, col: string, ww = 1, hh = 1) => { g.fillStyle = col; g.fillRect(x, y, ww, hh); };
+  const lit = (x: number, y: number, ww: number, hh: number) => { ge.fillStyle = '#fff'; ge.fillRect(x, y, ww, hh); };
+  const style = lk.style ?? 'brick', glass = style === 'glass';
+  px(0, 0, wall, w, h);
+  if (!glass) { const dk = shade(wall, 0.86), lt = shade(wall, 1.1); for (let i = 0; i < w * h * 0.07; i++) px(Math.floor(trnd() * w), Math.floor(trnd() * h), trnd() < 0.5 ? dk : lt); }
+  else { const grd = g.createLinearGradient(0, 0, 0, h); grd.addColorStop(0, shade(wall, 1.12)); grd.addColorStop(1, shade(wall, 0.8)); g.fillStyle = grd; g.fillRect(0, 0, w, h); }
+  if (blank) return [c, e] as const;
+  const rows = Math.max(1, lk.rows ?? Math.round(floors)), fh = h / rows;
+  const trim = lk.trim ?? (style === 'brown' ? '#d9ccb4' : style === 'stone' ? shade(wall, 1.12) : '#e6dccb'), recess = shade(wall, 0.62);
+  const n = Math.max(1, lk.bays ?? Math.floor((w - 2) / 4)), pitch = w / n, ww = pitch >= 7 ? 3 : 2;
+  for (let j = 0; j < rows; j++) {
+    const y = Math.round(h - (j + 1) * fh), fy = Math.round(h - j * fh) - y; // this storey's top row and height in px
+    if (j === 0 && shop) {
+      const bands = [lk.band ?? '#2f3a48'].flat(), u = w / bands.length;
+      bands.forEach((band, k) => {
+        const x0 = Math.round(k * u), x1 = Math.round((k + 1) * u), bh = Math.max(2, Math.round(fy * 0.25));
+        px(x0, y, recess, x1 - x0, 1); px(x0, y + 1, band, x1 - x0, bh);                       // sign band
+        px(x0, y + 1 + bh, lk.frame ?? '#2f3a48', x1 - x0, fy - 1 - bh);                         // shop frame
+        for (let x = x0 + 1; x < x1 - 1; x += 4) { const gh = Math.max(2, fy - 3 - bh); px(x, y + 2 + bh, '#9cc3d8', 3, gh); px(x, y + 2 + bh, '#cfe3ee', 1, 1); lit(x, y + 2 + bh, 3, gh); }
+        px(x0 + Math.floor((x1 - x0) * 0.7), y + 2 + bh, '#5b3d2e', 2, fy - 2 - bh);           // door
+      });
+      continue;
+    }
+    if (glass) {
+      for (let x = 0; x < w; x += 3) { px(x, y, lk.trim ?? shade(wall, 0.7), 1, fy); if (trnd() < 0.1) { px(x + 1, y + 1, '#f6d77a', 2, fy - 3); lit(x + 1, y + 1, 2, fy - 3); } }
+      px(0, y + fy - 1, shade(wall, 0.55), w, 1);                                                 // spandrel
+      continue;
+    }
+    if (style === 'stone') px(0, y + fy - 1, trim, w, 1);                                         // string course
+    const top = y + Math.max(1, Math.round(fy * (style === 'brown' ? 0.15 : 0.25))), wh = Math.max(2, Math.round(fy * (style === 'brown' ? 0.6 : 0.5)));
+    for (let i = 0; i < n; i++) {
+      const x = Math.round(pitch * (i + 0.5) - ww / 2), on = trnd() < 0.12;
+      if (lk.winAwn) px(x - 1, top - 1, lk.winAwn, ww + 2, 2); else px(x, top - 1, style === 'brick' ? recess : trim, ww, 1); // awning or lintel
+      px(x, top, on ? '#f6d77a' : '#5d7385', ww, wh);                                             // glass
+      if (!on) px(x, top, '#8fb2c8', 1, 1);                                                       // a glint
+      px(x, top + wh, trim, ww, 1);                                                               // sill
+      if (on) lit(x, top, ww, wh);
+    }
+  }
+  if (lk.escape && w >= 12) { // landings, railings and the zig-zag ladders between them, centred
+    const ex0 = Math.floor(w / 2) - 5, ew = Math.min(10, w - 2), iron = lk.escape;
+    for (let j = 1; j < rows; j++) {
+      const y = Math.round(h - (j + 1) * fh), fy = Math.round(h - j * fh) - y;
+      px(ex0, y + fy - 1, iron, ew, 1); for (let x = ex0; x < ex0 + ew; x += 2) px(x, y + fy - 3, iron); px(ex0, y + fy - 3, iron, ew, 1);
+      if (j > 1) for (let k = 0; k < fy - 1; k++) px(j % 2 ? ex0 + 1 + Math.round((k * (ew - 3)) / fy) : ex0 + ew - 2 - Math.round((k * (ew - 3)) / fy), y + fy + k, iron);
+    }
+  }
+  return [c, e] as const;
+}
+
 /** Roof surface: gravel speckle and a few tar seams, one shared texture per roof colour. */
 const roofCanvases = new Map<string, HTMLCanvasElement>();
 function roofCanvas(col: string) {
@@ -121,8 +199,34 @@ function roofCanvas(col: string) {
   roofCanvases.set(col, c); return c;
 }
 
-/** One place in src/data/real.json (metres east/north of the pizzeria; `front` points at its street). */
-export interface RealPlace { front: number[]; half: number; buildings: { p: number[][]; h: number; y: number; roof?: string; self?: boolean }[] }
+/** One place in src/data/real.json (metres east/north of the pizzeria; `front` points at its street; `side` marks the
+    buildings either side of it, L and R as seen from the street). */
+export interface RealPlace { front: number[]; half: number; buildings: { p: number[][]; h: number; y: number; roof?: string; self?: boolean; side?: 'L' | 'R' }[] }
+/** One building of a real row (src/data/rows.ts): frontage and depth in metres, storeys, wall colour, and its Look. */
+export interface Piece {
+  addr: string; w: number; d: number; storeys: number; wall: string; look?: Look;
+  /** height in units, when its storeys are taller than usual (cast iron, lofts); else from `storeys` */
+  h?: number;
+  cornice?: string | null; roof?: string; tank?: boolean; hip?: string;
+  /** awning stripes over its shopfronts (none if absent) */
+  awn?: [string, string] | null;
+  /** ground-floor shops (default: when its look has a sign band) */
+  shop?: boolean;
+}
+/** A pizzeria and the buildings either side of it, as seen from the street (nearest first on each side). */
+export interface Row {
+  left: Piece[];
+  self: Piece & { sign: string; awn: [string, string] | null; signBg?: string; signFg?: string; /** the pizzeria's own shopfront, metres from the building's left end */ shopAt?: [number, number] };
+  right: Piece[];
+  /** a cross street directly beyond the row on that side: the row is pushed against the block's end there */
+  corner?: 'left' | 'right';
+  /** deepest the buildings may go, in units, where no road behind them limits it */
+  maxD?: number;
+}
+/** Map height of a real building: a unit a storey, towers compressed like the rest of the skyline (the Hearst Tower is 18). */
+const unitsOf = (storeys: number) => (storeys <= 12 ? storeys : 12 + (storeys - 12) * 0.2);
+const DIRS: Record<Dir, [number, number]> = { N: [0, -1], S: [0, 1], E: [1, 0], W: [-1, 0] };
+const dirOf = (x: number, z: number): Dir => (Math.abs(x) > Math.abs(z) ? (x > 0 ? 'E' : 'W') : z > 0 ? 'S' : 'N');
 /** Wall colour for a real building from its age and height: brownstone and brick walk-ups, prewar limestone, modern glass. */
 function realWall(year: number, h: number) {
   if (h > 45 && (year > 1960 || !year)) return tpick(GLASS);
@@ -173,7 +277,9 @@ function faceFrame(x0: number, z0: number, w: number, d: number, f: Dir) {
   }
 }
 
-export interface BldOpts { fronts?: Dir[]; shop?: boolean; glass?: boolean; tank?: boolean; roof?: string; cornice?: string | null; y0?: number }
+/** `look` builds the facade as it stands (no random step-backs, gardens or fire escapes), with windowless party
+    walls on the `blank` sides and a `hip` roof of that colour (a copper or slate pyramid) if given. */
+export interface BldOpts { fronts?: Dir[]; shop?: boolean; glass?: boolean; tank?: boolean; roof?: string; cornice?: string | null; y0?: number; look?: Look; blank?: Dir[]; hip?: string }
 
 export class World {
   root = new THREE.Group();
@@ -189,7 +295,7 @@ export class World {
   pixelOnly: THREE.Object3D[] = [];
   private crowns: [number, number, number, number, THREE.Color, boolean][] = []; // ..., low detail (forests)
   private trunks: [number, number, number, number][] = [];
-  private people: [number, number, THREE.Color, THREE.Color][] = [];
+  private people: [number, number, THREE.Color, THREE.Color, string?][] = []; // ..., the pizzeria whose queue it is
   private roads: [number, number, number, number][] = [];
 
   add<T extends THREE.Object3D>(o: T, shadow = true): T {
@@ -233,16 +339,17 @@ export class World {
   /* ---------- buildings ---------- */
   building(x0: number, z0: number, w: number, d: number, floors: number, wall: string, o: BldOpts = {}): number {
     // tall masonry buildings often step back near the top
-    if (!o.glass && floors >= 10 && o.y0 === undefined && w > 2.4 && d > 2.4 && rnd() < 0.6) {
+    if (!o.look && !o.glass && floors >= 10 && o.y0 === undefined && w > 2.4 && d > 2.4 && rnd() < 0.6) {
       const cf = floors >= 14 ? 3 : 2, inset = Math.min(w, d) * 0.18;
       const t1 = this.building(x0, z0, w, d, floors - cf, wall, { ...o, tank: false, y0: 0 });
       return this.building(x0 + inset, z0 + inset, w - 2 * inset, d - 2 * inset, cf, wall, { ...o, fronts: [], shop: false, y0: t1 });
     }
-    const y0 = o.y0 ?? 0, fr = o.fronts ?? [], style = styleOf(wall, o.glass);
-    const escape = style === 'brick' && floors >= 4 && floors <= 9 && o.y0 === undefined && trnd() < 0.55;
+    const y0 = o.y0 ?? 0, fr = o.fronts ?? [], style = o.look?.style ?? styleOf(wall, o.glass);
+    const escape = !o.look && style === 'brick' && floors >= 4 && floors <= 9 && o.y0 === undefined && trnd() < 0.55;
     const roofC = roofCanvas(o.roof ?? (o.glass ? '#dfe8ee' : pick(ROOFS)));
     const sides = FACES.map(f => {
       const len = f === 'E' || f === 'W' ? d : w, shop = o.shop && fr.includes(f);
+      if (o.look) return lookTex(len, floors, wall, o.look, !!shop, !!o.blank?.includes(f));
       burnLegacyDraws(len, floors, shop, o.glass);
       return facadeTex(len, floors, wall, { shop, style, escape: escape && fr.includes(f) && !shop });
     });
@@ -263,18 +370,22 @@ export class World {
     this.windows.push(mat);
     const body = this.add(at(new THREE.Mesh(geo, mat), x0 + w / 2, y0 + floors / 2, z0 + d / 2));
     const n0 = this.root.children.length;
+    if (o.hip) { // a four-sided cone turned square to the walls, then stretched to the roof
+      const rh = Math.min(w, d) * 0.35, p = at(new THREE.Mesh(new THREE.ConeGeometry(1, rh, 4).rotateY(Math.PI / 4), lam(o.hip)), x0 + w / 2, top + rh / 2, z0 + d / 2);
+      p.scale.set(w / 2 / Math.SQRT1_2, 1, d / 2 / Math.SQRT1_2); this.add(p);
+    }
     if (o.tank && w > 2 && d > 2) {
       const tx = x0 + w * 0.7, tz = z0 + d * 0.3;
       for (const [dx, dz] of [[-0.4, -0.4], [0.4, -0.4], [-0.4, 0.4], [0.4, 0.4]]) this.box(tx + dx - 0.05, top, tz + dz - 0.05, 0.1, 0.6, 0.1, '#4a4542');
       this.cyl(tx, top + 0.6, tz, 0.7, 0.7, 1.3, '#a8743f', 8); this.add(at(new THREE.Mesh(new THREE.ConeGeometry(0.78, 0.6, 8), lam('#7d5432')), tx, top + 2.2, tz));
-    } else if (!o.glass && o.cornice !== null && floors >= 4 && floors <= 9 && w > 2.6 && d > 2.6 && rnd() < 0.18) {
+    } else if (!o.look && !o.glass && o.cornice !== null && floors >= 4 && floors <= 9 && w > 2.6 && d > 2.6 && rnd() < 0.18) {
       // a roof garden: planted deck and a couple of small trees
       this.box(x0 + 0.35, top, z0 + 0.35, w - 0.7, 0.12, d - 0.7, '#9fcf74', false);
       this.tree(x0 + w * 0.32, z0 + d * 0.35, 0.45, top + 0.12); if (rnd() < 0.6) this.tree(x0 + w * 0.68, z0 + d * 0.62, 0.38, top + 0.12);
-    } else if (!o.glass && o.cornice !== null && w > 2 && d > 2 && rnd() < 0.45) {
+    } else if (!o.hip && !o.glass && o.cornice !== null && w > 2 && d > 2 && rnd() < 0.45) {
       this.box(x0 + w * 0.15, top, z0 + d * 0.5, Math.min(1, w * 0.3), 0.75, Math.min(0.9, d * 0.3), '#c4bdb2'); // stair bulkhead / plant room
     }
-    this.roofClutter(x0, z0, w, d, top, !!o.glass, floors);
+    if (!o.hip) this.roofClutter(x0, z0, w, d, top, !!o.glass, floors);
     // rooftop things belong to the building: the cutaway hides them with it
     const kids = this.root.children.slice(n0);
     for (const c of kids) body.attach(c);
@@ -305,14 +416,16 @@ export class World {
     const body = this.root.children[n0]; for (const c of this.root.children.slice(n0 + 1)) body.attach(c); // the cutaway hides them together
   }
 
-  /** Awning (striped) and a name sign on one facade. */
-  storefront(x0: number, z0: number, w: number, d: number, front: Dir, awn: [string, string], sign?: string, signBg = '#fff6e6', signFg = '#2e2b29') {
+  /** Awning (striped; none when `awn` is null) and a name sign on one facade. */
+  storefront(x0: number, z0: number, w: number, d: number, front: Dir, awn: [string, string] | null, sign?: string, signBg = '#fff6e6', signFg = '#2e2b29') {
     const f = faceFrame(x0, z0, w, d, front), g = new THREE.Group();
     g.position.set(f.x, 0, f.z); g.rotation.y = f.ry;
-    const n = Math.max(4, Math.round((f.L - 0.3) * 3));
-    const [c, cx] = canvas(n, 1); for (let i = 0; i < n; i++) { cx.fillStyle = awn[i % 2]; cx.fillRect(i, 0, 1, 1); }
-    const a = new THREE.Mesh(new THREE.BoxGeometry(f.L - 0.3, 0.1, 1), new THREE.MeshLambertMaterial({ map: pixel(new THREE.CanvasTexture(c)) }));
-    a.position.set(0, 1.05, 0.45); a.rotation.x = 0.35; g.add(a);
+    if (awn) {
+      const n = Math.max(4, Math.round((f.L - 0.3) * 3));
+      const [c, cx] = canvas(n, 1); for (let i = 0; i < n; i++) { cx.fillStyle = awn[i % 2]; cx.fillRect(i, 0, 1, 1); }
+      const a = new THREE.Mesh(new THREE.BoxGeometry(f.L - 0.3, 0.1, 1), new THREE.MeshLambertMaterial({ map: pixel(new THREE.CanvasTexture(c)) }));
+      a.position.set(0, 1.05, 0.45); a.rotation.x = 0.35; g.add(a);
+    }
     if (sign) {
       const W = Math.round((f.L - 0.3) * 20), [s, sx] = canvas(W, 12);
       sx.fillStyle = signBg; sx.fillRect(0, 0, W, 12); sx.fillStyle = signFg; sx.font = 'bold 9px sans-serif'; sx.textAlign = 'center'; sx.textBaseline = 'middle'; sx.fillText(sign, W / 2, 6.5, W - 2);
@@ -331,15 +444,18 @@ export class World {
     // tag the building so a click on it (not just the pin) opens the review
     this.heroSign(x0, z0, w, d, front, top, o.sign);
     for (const c of this.root.children.slice(n0)) c.traverse(m => (m.userData.place = id));
-    // a short queue out front
-    const f = faceFrame(x0, z0, w, d, front), cs = Math.cos(f.ry), sn = Math.sin(f.ry), q = 2 + Math.floor(trnd() * 3);
-    for (let i = 0; i < q; i++) { const lx = f.L * 0.38 - i * 0.42, lz = 1.25 + (trnd() - 0.5) * 0.15; this.person(f.x + lx * cs + lz * sn, f.z - lx * sn + lz * cs, true); }
+    this.queue(id, x0, z0, w, d, front);
     this.pins[id] = { pos: new THREE.Vector3(x0 + w / 2, top + 0.6, z0 + d / 2), facing: front, box: { x0, z0, x1: x0 + w, z1: z0 + d, y1: top } };
+  }
+  /** A short queue out front of a storefront (detail RNG), marked as the pizzeria's so a real row can move it. */
+  private queue(id: string, x0: number, z0: number, w: number, d: number, front: Dir) {
+    const f = faceFrame(x0, z0, w, d, front), cs = Math.cos(f.ry), sn = Math.sin(f.ry), q = 2 + Math.floor(trnd() * 3);
+    for (let i = 0; i < q; i++) { const lx = f.L * 0.38 - i * 0.42, lz = 1.25 + (trnd() - 0.5) * 0.15; this.person(f.x + lx * cs + lz * sn, f.z - lx * sn + lz * cs, true); this.people[this.people.length - 1][4] = id; }
   }
 
   /** A pizzeria's rooftop sign: a glowing, double-faced panel on two posts, slice icon and name, facing the street. */
-  private heroSign(x0: number, z0: number, w: number, d: number, front: Dir, top: number, sign?: string) {
-    const f = faceFrame(x0, z0, w, d, front), L = Math.min(f.L - 0.2, 3.4), H = 0.95;
+  private heroSign(x0: number, z0: number, w: number, d: number, front: Dir, top: number, sign?: string, width?: number) {
+    const f = faceFrame(x0, z0, w, d, front), L = width ?? Math.min(f.L - 0.2, 3.4), H = 0.95;
     const W = Math.round(L * 24), Hp = Math.round(H * 24), [c, g] = canvas(W, Hp);
     g.fillStyle = '#d9473a'; g.fillRect(0, 0, W, Hp); g.fillStyle = '#fff6e6'; g.fillRect(1, 1, W - 2, 1); g.fillRect(1, Hp - 2, W - 2, 1);
     // pixel slice: crust, cheese, two pepperoni
@@ -356,6 +472,113 @@ export class World {
     grp.add(panel);
     for (const sx of [-L * 0.32, L * 0.32]) { const post = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.6, 0.08), edge); post.position.set(sx, top + 0.3, -0.5); grp.add(post); }
     grp.position.set(f.x, 0, f.z); grp.rotation.y = f.ry; this.add(grp);
+  }
+
+  /** The pizzeria `id` and the buildings either side of it as they stand (src/data/rows.ts): true widths, storeys and
+      facades, built in place of the hand-made pizzeria, whose pin gives the street and the facing. Hand-placed buildings,
+      trees and people in their way go. Run after the layout: it draws from the layout RNG freely. */
+  realRow(id: string, row: Row) {
+    const pin = this.pins[id], b = pin.box, M = 4, f = pin.facing, m = DIRS[f], R = [m[1], -m[0]]; // out of the facade; the viewer's right
+    const F = (x: number, z: number) => x * m[0] + z * m[1], U = (x: number, z: number) => x * R[0] + z * R[1];
+    const span = (rc: number[][], k: typeof F) => [Math.min(...rc.map(([x, z]) => k(x, z))), Math.max(...rc.map(([x, z]) => k(x, z)))];
+    const corners = (x0: number, z0: number, x1: number, z1: number) => [[x0, z0], [x1, z0], [x0, z1], [x1, z1]];
+    const [, ff] = span(corners(b.x0, b.z0, b.x1, b.z1), F), [bu0, bu1] = span(corners(b.x0, b.z0, b.x1, b.z1), U), uc = (bu0 + bu1) / 2;
+    // the block: cross streets end it either side (0.8 of pavement short of their kerbs); the next road behind backs it
+    let lo = uc - 14, hi = uc + 14, back = ff - (row.maxD ?? 9);
+    for (const [x0, z0, w, d] of this.roads) {
+      const rc = corners(x0, z0, x0 + w, z0 + d), [f0, f1] = span(rc, F), [u0, u1] = span(rc, U);
+      if (f1 > ff - 1 && f0 < ff - 0.5) { if (u1 <= uc) lo = Math.max(lo, u1 + 0.8); else if (u0 >= uc) hi = Math.min(hi, u0 - 0.8); }
+      else if (f1 <= ff - 0.5 && u1 > uc - 3 && u0 < uc + 3) back = Math.max(back, f1 + 0.8);
+    }
+    // no deeper than the map's own buildings (blocks are shorter than real ones), nor than half a block with buildings on both its streets
+    const avail = ff - back, dmax = Math.min(row.maxD ?? 4.2, avail > 6.5 ? avail / 2 - 0.3 : avail);
+    // left to right along the street at true widths, the pizzeria's shopfront where the hand-made one was
+    const self = row.self, S = self.w / M, [s0, s1] = (self.shopAt ?? [0, self.w]).map(v => v / M);
+    const total = [...row.left, self, ...row.right].reduce((t, p) => t + p.w / M, 0), lw = row.left.reduce((t, p) => t + p.w / M, 0);
+    // a neighbour keeps at least this much of itself when the row is longer than the block (the pizzeria at least 2 units)
+    let keepL = row.left.length ? Math.min(row.left[0].w / M, 1.2) : 0, keepR = row.right.length ? Math.min(row.right[0].w / M, 1.2) : 0;
+    const room = Math.max(0, hi - lo - Math.min(S, 2)), squeeze = Math.min(1, room / (keepL + keepR || 1)); keepL *= squeeze; keepR *= squeeze;
+    let u = uc - (s0 + s1) / 2; // the pizzeria building's left end
+    if (total <= hi - lo) { // it all fits: slide it inside the block, or against the cross street at a corner
+      u = Math.min(Math.max(u, lo + lw), hi - total + lw);
+      if (row.corner === 'left') u = lo + lw; else if (row.corner === 'right') u = hi - total + lw;
+    } else { // the map's blocks are shorter than real ones: keep the pizzeria whole and a slice of each neighbour, cropping their far ends
+      if (row.corner === 'left' && !row.left.length) u = lo; else if (row.corner === 'right' && !row.right.length) u = hi - S;
+      if (lo + keepL <= hi - keepR - S) u = Math.max(lo + keepL, Math.min(u, hi - keepR - S)); // whole, beside a slice of each neighbour
+      else u = Math.max(lo + keepL - s0, Math.min(u, hi - keepR - s1)); // too wide for that: its far side runs past the block's end
+      u = Math.max(lo - s0, Math.min(u, hi - s1)); // and the shopfront inside the block, whatever else gives
+    }
+    const sh0 = u + s0, sh1 = u + s1;
+    // where even that won't fit, the pizzeria's building gives way too (never its shopfront), so each neighbour shows a slice
+    const e0 = Math.min(Math.max(u, lo + keepL), sh0), e1 = Math.max(Math.min(u + S, hi - keepR), sh1);
+    type P = { p: Piece; u0: number; u1: number; me?: boolean };
+    const ps: P[] = [{ p: self, u0: e0, u1: e1, me: true }];
+    for (const p of row.left) ps.unshift({ p, u0: ps[0].u0 - p.w / M, u1: ps[0].u0 });
+    for (const p of row.right) ps.push({ p, u0: ps[ps.length - 1].u1, u1: ps[ps.length - 1].u1 + p.w / M });
+    for (const q of ps) { q.u0 = Math.max(q.u0, lo); q.u1 = Math.min(q.u1, hi); }
+    const live = ps.filter(q => q.u1 - q.u0 > 0.3);
+    // (u, f) -> x/z box
+    const box = (u0: number, u1: number, f0: number, f1: number) => {
+      const pts = [[u0, f0], [u1, f0], [u0, f1], [u1, f1]].map(([u, g]) => [u * R[0] + g * m[0], u * R[1] + g * m[1]]);
+      const x0 = Math.min(...pts.map(p => p[0])), z0 = Math.min(...pts.map(p => p[1]));
+      return { x0, z0, w: Math.max(...pts.map(p => p[0])) - x0, d: Math.max(...pts.map(p => p[1])) - z0 };
+    };
+    const rects = live.map(q => ({ q, ...box(q.u0, q.u1, ff - Math.min(q.p.d / M, dmax), ff) }));
+    // clear the ground: the hand-made pizzeria and its queue, and whatever hand-placed building, tree or person stands there
+    const hit = (x0: number, z0: number, x1: number, z1: number) => rects.reduce((s, r) =>
+      s + Math.max(0, Math.min(x1, r.x0 + r.w) - Math.max(x0, r.x0)) * Math.max(0, Math.min(z1, r.z0 + r.d) - Math.max(z0, r.z0)), 0);
+    this.people = this.people.filter(([x, z, , , who]) => who !== id && !hit(x - 0.01, z - 0.01, x + 0.01, z + 0.01));
+    const keep = this.trunks.map(([x, z]) => !hit(x - 0.3, z - 0.3, x + 0.3, z + 0.3)); // a tree is a trunk and its four crowns
+    this.trunks = this.trunks.filter((_, i) => keep[i]); this.crowns = this.crowns.filter((_, i) => keep[i >> 2]);
+    for (const o of [...this.root.children]) {
+      if (o.userData.place === id) { this.drop(o); continue; }
+      const mesh = o as THREE.Mesh;
+      if (!mesh.isMesh || !mesh.castShadow || o.userData.place || (o as THREE.InstancedMesh).isInstancedMesh) continue;
+      const bb = new THREE.Box3().setFromObject(o); if (bb.max.y < 1.2) continue;
+      const own = (bb.max.x - bb.min.x) * (bb.max.z - bb.min.z);
+      if (hit(bb.min.x, bb.min.z, bb.max.x, bb.max.z) > Math.min(0.5, own * 0.15)) this.drop(o);
+    }
+    // build them: party walls blank, except where the row meets a cross street (that side gets the shopfront too)
+    const lf = dirOf(-R[0], -R[1]), rf = dirOf(R[0], R[1]), all = { x0: Infinity, z0: Infinity, x1: -Infinity, z1: -Infinity, y1: 0 };
+    rects.forEach((r, i) => {
+      const p = r.q.p, n0 = this.root.children.length, open: Dir[] = [];
+      if (i === 0 && row.corner === 'left') open.push(lf); if (i === rects.length - 1 && row.corner === 'right') open.push(rf);
+      const shop = p.shop ?? !!p.look?.band;
+      const top = this.building(r.x0, r.z0, r.w, r.d, p.h ?? unitsOf(p.storeys), p.wall, {
+        fronts: [f, ...open], shop, look: p.look ?? {}, blank: [lf, rf].filter(s => !open.includes(s)), roof: p.roof, cornice: p.cornice, tank: p.tank, hip: p.hip, y0: 0 });
+      if (p.awn && !r.q.me) this.storefront(r.x0, r.z0, r.w, r.d, f, p.awn);
+      for (const c of this.root.children.slice(n0)) c.userData.row = id; // flush with the storefront, so the cutaway leaves them be
+      Object.assign(all, { x0: Math.min(all.x0, r.x0), z0: Math.min(all.z0, r.z0), x1: Math.max(all.x1, r.x0 + r.w), z1: Math.max(all.z1, r.z0 + r.d), y1: Math.max(all.y1, top) });
+      if (!r.q.me) return;
+      // the pizzeria: its awning, name and rooftop sign over its own shopfront, its queue, and its pin
+      const fb = ff - r.d * Math.abs(m[1]) - r.w * Math.abs(m[0]), a0 = Math.max(sh0, r.q.u0), a1 = Math.min(sh1, r.q.u1), s = box(a0, a1, fb, ff);
+      this.storefront(s.x0, s.z0, s.w, s.d, f, self.awn, self.sign, self.signBg, self.signFg);
+      // the rooftop sign: wide enough to read, overhanging the neighbours only where they're no taller
+      const L = Math.min(3.4, Math.max(2.6, a1 - a0 - 0.2)), hOf = (q?: P) => (q ? q.p.h ?? unitsOf(q.p.storeys) : 0), mine = hOf(r.q) + 0.05;
+      const k = live.indexOf(r.q), min = hOf(live[k - 1]) > mine ? r.q.u0 + 0.1 : -Infinity, max = hOf(live[k + 1]) > mine ? r.q.u1 - 0.1 : Infinity;
+      let g0 = (a0 + a1) / 2 - L / 2, g1 = g0 + L;
+      if (g1 > max) { g0 -= g1 - max; g1 = max; } if (g0 < min) { g1 = Math.min(max, g1 + min - g0); g0 = min; }
+      const sg = box(g0, g1, fb, ff);
+      this.heroSign(sg.x0, sg.z0, sg.w, sg.d, f, top, self.sign, g1 - g0);
+      for (const c of this.root.children.slice(n0)) c.traverse(o => (o.userData.place = id));
+      this.queue(id, s.x0, s.z0, s.w, s.d, f);
+      pin.pos.set(s.x0 + s.w / 2, top + 0.6, s.z0 + s.d / 2);
+      pin.box = { x0: r.x0, z0: r.z0, x1: r.x0 + r.w, z1: r.z0 + r.d, y1: top };
+    });
+    pin.row = all;
+  }
+  /** Take an object out of the world for good: its geometry, materials and textures, and its night lighting. */
+  private drop(o: THREE.Object3D) {
+    o.traverse(c => {
+      const mesh = c as THREE.Mesh; if (!mesh.isMesh) return;
+      mesh.geometry.dispose();
+      for (const mt of [mesh.material].flat() as THREE.MeshLambertMaterial[]) {
+        if ([...mats.values()].includes(mt)) continue; // shared flat colours stay
+        mt.map?.dispose(); mt.emissiveMap?.dispose(); mt.dispose();
+        this.windows = this.windows.filter(w => w !== mt); this.glow = this.glow.filter(w => w !== mt);
+      }
+    });
+    o.removeFromParent();
   }
 
   /** Real buildings beside a pizzeria (Sketch style only): footprints and roof heights from city / OSM data, roofs
@@ -389,11 +612,13 @@ export class World {
       return outp;
     }, poly);
     const inBlock = [(p: number[]) => F(p) - f0, (p: number[]) => f1 - F(p), (p: number[]) => A(p) - lo, (p: number[]) => hi - A(p)], g = 0.15;
-    // the block minus the hand-made pizzeria: left of it, right of it, and behind it
-    const around = [[(p: number[]) => ma0 - g - A(p)], [(p: number[]) => A(p) - ma1 - g], [(p: number[]) => A(p) - ma0 + g, (p: number[]) => ma1 + g - A(p), (p: number[]) => mback - g - F(p)]];
+    // the block minus the pizzeria's row (or the hand-made pizzeria): left of it, right of it, and behind it
+    const rw = pin.row ?? b, rc = [[rw.x0, rw.z0], [rw.x1, rw.z0], [rw.x0, rw.z1], [rw.x1, rw.z1]];
+    const ra0 = Math.min(...rc.map(A)), ra1 = Math.max(...rc.map(A)), rback = Math.min(...rc.map(F));
+    const around = [[(p: number[]) => ra0 - g - A(p)], [(p: number[]) => A(p) - ra1 - g], [(p: number[]) => A(p) - ra0 + g, (p: number[]) => ra1 + g - A(p), (p: number[]) => rback - g - F(p)]];
     const walls: THREE.BufferGeometry[] = [], roofs: THREE.BufferGeometry[] = [], half = r.half, cover: V[][] = []; // each real piece, in map x/z
     for (const bd of r.buildings) {
-      if (bd.self) continue;
+      if (bd.self || (pin.row && bd.side)) continue; // the row builds these in both styles
       const col = new THREE.Color(realWall(bd.y, bd.h)), H = Math.max(1, bd.h / M);
       for (const cut of around) {
         let poly = clip(bd.p.map(q => ({ p: place(q), q })), [...inBlock, ...cut]);
